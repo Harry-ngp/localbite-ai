@@ -1,3 +1,3 @@
 # LocalBite AI
 
-AI-powered hyperlocal logistics engine designed for Tier-2/3 cities and rural delivery systems.
+AI-powered hyperlocal logistics platform for Tier-2/3 cities and rural delivery ecosystems.
