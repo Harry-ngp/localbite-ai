@@ -16,7 +16,7 @@ class OrderCreate(OrderBase):
 class OrderResponse(OrderBase):
     # This is what the API sends back. 
     # It includes system-generated fields.
-    order_id: str
+    id: str
     status: str
     created_at: datetime
 
