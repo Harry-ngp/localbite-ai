@@ -18,6 +18,8 @@ class OrderResponse(OrderBase):
     id: str
     status: str
     created_at: datetime
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
     # THIS IS NEW: It is Optional because a brand new order doesn't have a rider yet
     rider_id: Optional[str] = None 
 

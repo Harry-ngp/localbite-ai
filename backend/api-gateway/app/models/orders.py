@@ -16,6 +16,10 @@ class Order(Base):
     # e.g., 1 Biryani = 15 units. 1 Pizza = 30 units.
     volume_units = Column(Integer, default=20) 
     
+    # NEW: Geospatial tracking for the rider's GPS
+    latitude = Column(Float, nullable=True)
+    longitude = Column(Float, nullable=True)
+    
     # STATUS UPDATE: It will now flow: pending -> offered -> assigned -> delivered
     status = Column(String, default="pending_assignment")
     created_at = Column(DateTime, default=datetime.utcnow)
