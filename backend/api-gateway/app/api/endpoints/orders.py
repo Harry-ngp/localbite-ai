@@ -9,79 +9,93 @@ from app.core.database import get_db, SessionLocal
 from app.core.websocket import manager
 # Add this import at the top with your other imports
 from app.services.nlp import nlp_engine
+from sqlalchemy import text
 router = APIRouter()
 
 
 # Notice we removed 'db: Session' from the arguments here
-async def process_order_background(order_id: str, address_text: str):
+async def process_order_background(order_id: str, address_text: str, amount: float):
     print(f"⚙️ [Background] Processing AI and GPS for order {order_id}...")
     
     ai_extracted_tags = nlp_engine.extract_landmarks(address_text)
     lat, lon = nlp_engine.get_coordinates(ai_extracted_tags)
     
     if lat and lon:
-        # 🔑 OPEN A FRESH DATABASE CONNECTION JUST FOR THIS TASK
         db = SessionLocal() 
         try:
+            # 1. Save the new coordinates to the order
             db_order = db.query(Order).filter(Order.id == order_id).first()
             if db_order:
                 db_order.latitude = lat
                 db_order.longitude = lon
                 db.commit()
                 print(f"✅ [Background] Order {order_id} updated with GPS coordinates.")
+            
+            # 2. 🌍 THE POSTGIS RADIUS SEARCH (3km = 3000 meters)
+            query = text("""
+                SELECT id FROM riders 
+                WHERE ST_DWithin(
+                    location, 
+                    ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)::geography, 
+                    3000
+                )
+            """)
+            
+            # Execute the search!
+            result = db.execute(query, {"lon": lon, "lat": lat}).fetchall()
+            nearby_rider_ids = [str(row[0]) for row in result]
+            
+            print(f"🎯 PostGIS Found {len(nearby_rider_ids)} riders within a 3km radius!")
+
+            # 3. 🚨 TARGETED WEBSOCKET DISPATCH
+            offer_payload = {
+                "type": "new_order_offer",
+                "order_id": order_id,
+                "delivery_address": address_text,
+                "amount": amount
+            }
+            
+            # Only ping the riders who are actually nearby AND online
+            for rider_id in nearby_rider_ids:
+                if rider_id in manager.active_connections:
+                    await manager.active_connections[rider_id].send_json(offer_payload)
+                    print(f"📡 Dispatched to nearby rider: {rider_id}")
+
         except Exception as e:
             print(f"⚠️ [Background DB Error]: {e}")
         finally:
-            # Always close the door behind you when you are done!
             db.close()
 
 @router.post("/", response_model=OrderResponse)
-async def create_new_order(order: OrderCreate,background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
-    
-    # 1. 🧠 AI Interceptor: Get the text landmarks
-    ai_extracted_tags = nlp_engine.extract_landmarks(order.delivery_address)
-    print(f"🤖 AI Extracted Landmarks: {ai_extracted_tags}")
-    
-    # 2. 🌍 Maps Interceptor: Convert text to GPS
-    lat, lon = nlp_engine.get_coordinates(ai_extracted_tags)
-    if lat and lon:
-        print(f"📍 GPS Locked: {lat}, {lon}")
-
-    # 3. Save EVERYTHING to Supabase
+async def create_new_order(
+    order: OrderCreate, 
+    background_tasks: BackgroundTasks, 
+    db: Session = Depends(get_db)
+):
+    # 1. Save the raw order
     db_order = Order(
         customer_name=order.customer_name,
         delivery_address=order.delivery_address,
         item_description=order.item_description,
         amount=order.amount,
         volume_units=order.volume_units
-        # Notice we are leaving lat/lon empty for now!
     )
     db.add(db_order)
     db.commit()
     db.refresh(db_order)
     
-    # 2. 🧠 Handoff to the Background Task
-    # 2. 🧠 Handoff to the Background Task
+    # 2. Handoff to the Background Task (Notice we added amount here)
     background_tasks.add_task(
         process_order_background, 
         order_id=db_order.id, 
-        address_text=db_order.delivery_address 
-        # REMOVED the 'db=db' line from here!
+        address_text=db_order.delivery_address,
+        amount=db_order.amount
     )
     
-    # 3. Trigger the WebSocket Dispatcher 
-    offer_payload = {
-        "type": "new_order_offer",
-        "order_id": db_order.id,
-        "delivery_address": db_order.delivery_address,
-        "amount": db_order.amount
-    }
-    for rider_id, connection in manager.active_connections.items():
-        await connection.send_json(offer_payload)
+    # WE REMOVED THE WEBSOCKET LOOP FROM HERE!
         
-    # 4. Instantly return a response to the customer!
+    # 3. Instantly return a response to the customer!
     return db_order
-
 # ... (Keep your existing get_active_orders and assign_order_to_rider below)
 
 @router.put("/{order_id}/assign", response_model=OrderResponse)
