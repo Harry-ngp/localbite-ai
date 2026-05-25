@@ -1,29 +1,34 @@
-from fastapi import WebSocket
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from typing import Dict
+
+# 🚨 This is the exact 'router' that main.py is looking for!
+router = APIRouter()
 
 class ConnectionManager:
     def __init__(self):
-        # This dictionary maps a rider_id to their active WebSocket tunnel
+        # This dictionary keeps track of every online rider
         self.active_connections: Dict[str, WebSocket] = {}
 
     async def connect(self, websocket: WebSocket, rider_id: str):
-        # Accept the incoming connection
         await websocket.accept()
-        # Store it in our dictionary
         self.active_connections[rider_id] = websocket
-        print(f"📡 Rider {rider_id} connected to the dispatch grid.")
+        print(f"🟢 [WebSocket] Rider {rider_id} is ONLINE and waiting for orders.")
 
     def disconnect(self, rider_id: str):
-        # Remove the rider if they close the app or lose cell service
         if rider_id in self.active_connections:
             del self.active_connections[rider_id]
-            print(f"🔌 Rider {rider_id} disconnected.")
+            print(f"🔴 [WebSocket] Rider {rider_id} disconnected.")
 
-    async def send_personal_message(self, message: dict, rider_id: str):
-        # Push a JSON notification to a specific rider
-        if rider_id in self.active_connections:
-            websocket = self.active_connections[rider_id]
-            await websocket.send_json(message)
-
-# Create a single, global instance of our switchboard
+# Create the global switchboard that orders.py will use to send messages
 manager = ConnectionManager()
+
+# This is the endpoint your React frontend will connect to
+@router.websocket("/ws/rider/{rider_id}")
+async def websocket_endpoint(websocket: WebSocket, rider_id: str):
+    await manager.connect(websocket, rider_id)
+    try:
+        while True:
+            # We just wait here patiently to keep the connection open
+            data = await websocket.receive_text()
+    except WebSocketDisconnect:
+        manager.disconnect(rider_id)
