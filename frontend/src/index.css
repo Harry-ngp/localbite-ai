@@ -1,3 +1,6 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* Ensure the map renders correctly without z-index fighting */
+.leaflet-container {
+  z-index: 10 !important;
+}

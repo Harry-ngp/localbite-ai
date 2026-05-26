@@ -5,15 +5,11 @@ from app.models.riders import Rider
 from app.schemas.orders import OrderCreate, OrderResponse
 from app.models.orders import Order
 from app.core.database import get_db, SessionLocal
-# THIS IS NEW: Import the switchboard
 from app.core.websocket import manager
-# Add this import at the top with your other imports
 from app.services.nlp import nlp_engine
 from sqlalchemy import text
 router = APIRouter()
 
-
-# Notice we removed 'db: Session' from the arguments here
 async def process_order_background(order_id: str, address_text: str, amount: float):
     print(f"⚙️ [Background] Processing AI and GPS for order {order_id}...")
     
@@ -55,10 +51,10 @@ async def process_order_background(order_id: str, address_text: str, amount: flo
                 "amount": amount
             }
             
-            # Only ping the riders who are actually nearby AND online
+            # 🚨 THE FIX: Check rider_connections instead of active_connections
             for rider_id in nearby_rider_ids:
-                if rider_id in manager.active_connections:
-                    await manager.active_connections[rider_id].send_json(offer_payload)
+                if rider_id in manager.rider_connections:
+                    await manager.rider_connections[rider_id].send_json(offer_payload)
                     print(f"📡 Dispatched to nearby rider: {rider_id}")
 
         except Exception as e:
@@ -84,19 +80,16 @@ async def create_new_order(
     db.commit()
     db.refresh(db_order)
     
-    # 2. Handoff to the Background Task (Notice we added amount here)
+    # 2. Handoff to the Background Task
     background_tasks.add_task(
         process_order_background, 
         order_id=db_order.id, 
         address_text=db_order.delivery_address,
         amount=db_order.amount
     )
-    
-    # WE REMOVED THE WEBSOCKET LOOP FROM HERE!
         
     # 3. Instantly return a response to the customer!
     return db_order
-# ... (Keep your existing get_active_orders and assign_order_to_rider below)
 
 @router.put("/{order_id}/assign", response_model=OrderResponse)
 def assign_order_to_rider(order_id: str, rider_id: str, db: Session = Depends(get_db)):
@@ -130,5 +123,3 @@ def get_active_orders(db: Session = Depends(get_db)):
     # Query the database to get all orders
     orders = db.query(Order).all()
     return orders
-
-# ...

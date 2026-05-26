@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>LocalBite Rider App</title>
+</head>
+<body style="font-family: Arial; padding: 20px; background: #121212; color: #00FF00;">
+    <h2>🏍️ LocalBite Dispatch Terminal</h2>
+    <div id="messages" style="border: 1px solid #333; padding: 10px; height: 300px; overflow-y: scroll;">
+        Connecting to Dispatch Server...<br>
+    </div>
+
+    <script>
+        // Replace this with your actual Rider ID from the database
+        const rider_id = "2855d273-c87d-4d9e-92dd-d7e7cfa2591f"; 
+        
+        // Notice the 'ws://' instead of 'http://'
+        const ws = new WebSocket(`ws://127.0.0.1:8000/api/v1/riders/${rider_id}/ws`);
+
+        ws.onopen = function(event) {
+            document.getElementById('messages').innerHTML += "✅ Connection established. Waiting for orders...<br>";
+        };
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            document.getElementById('messages').innerHTML += `🚨 <b>NEW ORDER OFFER:</b> ${data.order_id}<br>`;
+        };
+
+        ws.onclose = function(event) {
+            document.getElementById('messages').innerHTML += "❌ Disconnected from server.<br>";
+        };
+    </script>
+</body>
+</html>
