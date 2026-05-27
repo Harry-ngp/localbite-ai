@@ -1,0 +1,51 @@
+from sqlalchemy import Column, String, Float, Boolean, ForeignKey, DateTime
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+import uuid
+from datetime import datetime
+from app.core.database import Base
+
+class MarketplaceUser(Base):
+    __tablename__ = "marketplace_users"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email = Column(String, unique=True, nullable=False)
+    role = Column(String, nullable=False) # 'customer', 'rider', 'partner'
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    restaurants = relationship("Restaurant", back_populates="owner")
+
+class Restaurant(Base):
+    __tablename__ = "restaurants"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("marketplace_users.id"))
+    name = Column(String, nullable=False)
+    description = Column(String)
+    address = Column(String, nullable=False)
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    image_url = Column(String)
+    rating = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    owner = relationship("MarketplaceUser", back_populates="restaurants")
+    menu_items = relationship("MenuItem", back_populates="restaurant")
+
+class MenuItem(Base):
+    __tablename__ = "menu_items"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    restaurant_id = Column(UUID(as_uuid=True), ForeignKey("restaurants.id", ondelete="CASCADE"))
+    name = Column(String, nullable=False)
+    description = Column(String)
+    price = Column(Float, nullable=False)
+    category = Column(String, nullable=False)
+    image_url = Column(String)
+    is_available = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    restaurant = relationship("Restaurant", back_populates="menu_items")

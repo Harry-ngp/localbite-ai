@@ -2,12 +2,14 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from pydantic import BaseModel # <-- We added this import for the login model!
+from pydantic import BaseModel
 
+# 🚨 THE BULLETPROOF IMPORTS (No folder guessing!)
 from app.core.database import get_db, engine, Base
 from app.models import orders, riders
 from app.api.router import api_router
 from app.core.websocket import router as websocket_router
+from app.api.partners import router as partners_router 
 
 # 1. Create the app EXACTLY ONCE
 app = FastAPI(
@@ -31,12 +33,14 @@ Base.metadata.create_all(bind=engine)
 # 4. Include the routers
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(websocket_router)
+app.include_router(partners_router, prefix="/api/v1/partners", tags=["Partners"])
 
 # ==========================================
-# 🚨 NEW: THE LOGIN ENDPOINT
+# 5. THE LOGIN ENDPOINT
 # ==========================================
 class LoginRequest(BaseModel):
     email: str
+    
 @app.post("/api/v1/riders/login")
 def login_rider(request: LoginRequest, db: Session = Depends(get_db)):
     # 1. ARMOR: Automatically lowercase the email and strip out any hidden spaces
@@ -61,15 +65,15 @@ def login_rider(request: LoginRequest, db: Session = Depends(get_db)):
 
     # 5. The Dynamic Check
     if not rider:
-        # We even include the clean email in the error so you can see why it failed!
         raise HTTPException(status_code=404, detail=f"Rider '{clean_email}' not found in database")
 
     return {
         "status": "success",
         "rider_id": str(rider[0])
     }
+
 # ==========================================
-# 5. Health Check Endpoint
+# 6. Health Check Endpoint
 # ==========================================
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):

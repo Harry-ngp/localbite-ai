@@ -123,3 +123,21 @@ def get_active_orders(db: Session = Depends(get_db)):
     # Query the database to get all orders
     orders = db.query(Order).all()
     return orders
+
+@router.put("/{order_id}/complete", response_model=OrderResponse)
+def complete_delivery(order_id: str, db: Session = Depends(get_db)):
+    order = db.query(Order).filter(Order.id == order_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+        
+    rider = db.query(Rider).filter(Rider.id == order.rider_id).first()
+    if rider:
+        rider.current_status = "available"
+        
+    # 🚨 THE FIX: Update the status AND officially log the fee!
+    order.status = "completed"
+    order.delivery_fee = 40.0 
+    
+    db.commit()
+    db.refresh(order)
+    return order

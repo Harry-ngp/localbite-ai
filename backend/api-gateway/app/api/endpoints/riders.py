@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisco
 from app.core.websocket import manager
 from sqlalchemy.orm import Session
 from typing import List
-
+from app.models.orders import Order 
 from app.schemas.riders import RiderCreate, RiderResponse
 from app.models.riders import Rider
 from app.core.database import get_db
@@ -50,3 +50,23 @@ async def rider_websocket_endpoint(websocket: WebSocket, rider_id: str):
     except WebSocketDisconnect:
         # 3. If the connection drops, clean up the switchboard
         manager.disconnect(rider_id)
+# Make sure you import the Order model at the top!
+
+@router.get("/{rider_id}/earnings")
+def get_rider_earnings(rider_id: str, db: Session = Depends(get_db)):
+    # Query Supabase for all completed orders for this rider
+    completed_orders = db.query(Order).filter(
+        Order.rider_id == rider_id, 
+        Order.status == "completed"
+    ).all()
+    
+    total_trips = len(completed_orders)
+    
+    # 🚨 THE FIX: Actually sum up the money from the database rows!
+    total_earnings = sum((order.delivery_fee or 0.0) for order in completed_orders)
+    
+    return {
+        "rider_id": rider_id,
+        "completed_trips": total_trips,
+        "total_earnings": total_earnings
+    }

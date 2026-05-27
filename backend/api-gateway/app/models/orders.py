@@ -24,3 +24,4 @@ class Order(Base):
     status = Column(String, default="pending_assignment")
     created_at = Column(DateTime, default=datetime.utcnow)
     rider_id = Column(String, ForeignKey("riders.id"), nullable=True)
+    delivery_fee = Column(Float, default=0.0)
