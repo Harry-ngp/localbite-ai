@@ -8,6 +8,8 @@ class OrderBase(BaseModel):
     item_description: str
     amount: float = Field(..., gt=0, description="Order value must be greater than 0")
     volume_units: int = Field(20, description="Space required in delivery bag") # Added
+    restaurant_id: Optional[str] = None  # NEW: Link to restaurant
+    customer_id: Optional[str] = None  # NEW: Link to customer
     
 class OrderCreate(OrderBase):
     # This is what the user sends to create an order. 
@@ -21,7 +23,9 @@ class OrderResponse(OrderBase):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     # THIS IS NEW: It is Optional because a brand new order doesn't have a rider yet
-    rider_id: Optional[str] = None 
+    rider_id: Optional[str] = None
+    restaurant_id: Optional[str] = None  # NEW: Restaurant/Partner info
+    customer_id: Optional[str] = None  # NEW: Customer info
 
     class Config:
         from_attributes = True

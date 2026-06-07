@@ -24,4 +24,6 @@ class Order(Base):
     status = Column(String, default="pending_assignment")
     created_at = Column(DateTime, default=datetime.utcnow)
     rider_id = Column(String, ForeignKey("riders.id"), nullable=True)
+    restaurant_id = Column(String, nullable=True)  # NEW: Link to restaurant/partner
+    customer_id = Column(String, nullable=True)  # NEW: Link to customer
     delivery_fee = Column(Float, default=0.0)

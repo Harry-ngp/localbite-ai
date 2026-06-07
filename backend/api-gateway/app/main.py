@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-
+# Add this import at the top alongside your partners_router
+from app.api.customer import router as customer_router
 # 🚨 THE BULLETPROOF IMPORTS (No folder guessing!)
 from app.core.database import get_db, engine, Base
 from app.models import orders, riders
@@ -34,7 +35,7 @@ Base.metadata.create_all(bind=engine)
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(websocket_router)
 app.include_router(partners_router, prefix="/api/v1/partners", tags=["Partners"])
-
+app.include_router(customer_router, prefix="/api/v1/customer", tags=["Customer Tools"])
 # ==========================================
 # 5. THE LOGIN ENDPOINT
 # ==========================================
