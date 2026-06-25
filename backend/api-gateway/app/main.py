@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException
+# pyrefly: ignore [missing-import]
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -11,6 +12,8 @@ from app.models import orders, riders
 from app.api.router import api_router
 from app.core.websocket import router as websocket_router
 from app.api.partners import router as partners_router 
+from app.services.monitor import monitor_stuck_orders
+import asyncio
 
 # 1. Create the app EXACTLY ONCE
 app = FastAPI(
@@ -30,6 +33,10 @@ app.add_middleware(
 
 # 3. Initialize Database Tables
 Base.metadata.create_all(bind=engine)
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(monitor_stuck_orders())
 
 # 4. Include the routers
 app.include_router(api_router, prefix="/api/v1")

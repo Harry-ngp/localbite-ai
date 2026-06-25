@@ -66,9 +66,17 @@ export default function CustomerScreen({ goBack, addGlobalOrder }) {
     const [aiDecision, setAiDecision] = useState(null);
     const [searchLoading, setSearchLoading] = useState(false);
     
-    // --- 🚨 NEW: VIEW STATE ---
     const [viewMode, setViewMode] = useState('home'); // 'home', 'history', 'favorites'
   
+    // --- 🚨 NEW: SPLIT BILL STATES ---
+    const [showCheckoutOptions, setShowCheckoutOptions] = useState(false);
+    const [splitRoomMode, setSplitRoomMode] = useState(false);
+    const [splitFriends, setSplitFriends] = useState([
+      { id: 1, name: "You (Host)", amount: 0, isReady: true }
+    ]);
+    const deliveryFee = 40;
+    const gstRate = 0.05;
+
     // --- 1. INITIALIZE LIVE FEED & LOAD ORDER HISTORY ---
     useEffect(() => {
       fetch("http://127.0.0.1:8000/api/v1/customer/restaurants")
@@ -264,6 +272,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder }) {
   // --- DELIVERY TRACKING ---
   const startTracking = (orderId) => { 
     setIsTracking(true);
+    setIsDelivered(false);
     setCurrentOrderId(orderId);
     setStatus('✅ Order Placed! Waiting for kitchen to accept...');
     setOrderRequestFlow({
@@ -454,17 +463,99 @@ export default function CustomerScreen({ goBack, addGlobalOrder }) {
               {restaurantMenu.length === 0 && <p className="text-slate-500 py-10 text-center">This kitchen hasn't added a menu yet.</p>}
             </div>
           </div>
-  
           {/* 🚨 FLOATING CHECKOUT BAR */}
-          {cart.length > 0 && (
+          {cart.length > 0 && !splitRoomMode && (
             <div className="fixed bottom-0 left-0 w-full p-4 bg-slate-900/90 backdrop-blur-xl border-t border-white/10 z-50">
               <div className="max-w-2xl mx-auto flex justify-between items-center">
                 <div>
                   <p className="text-xs text-slate-400 font-bold uppercase tracking-wider">{cart.reduce((a,b)=>a+b.quantity,0)} Items</p>
                   <p className="text-2xl font-black text-white">₹{cartTotal}</p>
                 </div>
-                <button onClick={checkoutCart} className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 px-8 rounded-xl shadow-lg shadow-emerald-500/20 transition transform hover:scale-105">
-                  Checkout →
+                <div className="flex gap-3">
+                  <button onClick={() => setSplitRoomMode(true)} className="bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 font-bold py-3 px-6 rounded-xl transition">
+                    Split Bill 👥
+                  </button>
+                  <button onClick={checkoutCart} className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-3 px-8 rounded-xl shadow-lg shadow-emerald-500/20 transition transform hover:scale-105">
+                    Checkout Solo →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 🚨 SPLIT BILL ROOM MODAL */}
+          {splitRoomMode && (
+            <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 w-full max-w-lg shadow-2xl relative">
+                <button onClick={() => setSplitRoomMode(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">✕</button>
+                
+                <h2 className="text-2xl font-black text-white mb-2">Split Bill Room 🍕</h2>
+                <p className="text-sm text-slate-400 mb-6">Share this code with friends so they can add to your cart.</p>
+                
+                <div className="bg-slate-800 p-4 rounded-xl flex items-center justify-between mb-6 border border-emerald-500/30">
+                  <div>
+                    <p className="text-xs text-emerald-400 font-bold uppercase">Room Code</p>
+                    <p className="text-2xl font-mono tracking-widest text-white">LB-9X4A</p>
+                  </div>
+                  <button className="bg-emerald-500/20 text-emerald-400 px-4 py-2 rounded-lg font-bold hover:bg-emerald-500 hover:text-slate-900 transition">
+                    Share Link
+                  </button>
+                </div>
+
+                <div className="space-y-4 mb-6">
+                  <h3 className="font-bold text-slate-300">Live Members & Split</h3>
+                  
+                  {/* Host */}
+                  <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-lg border border-white/5">
+                    <div className="flex items-center gap-3">
+                      <span className="bg-emerald-500 text-slate-900 w-8 h-8 rounded-full flex items-center justify-center font-bold">H</span>
+                      <div>
+                        <p className="font-bold text-white">You (Host)</p>
+                        <p className="text-xs text-slate-400">Cart Total: ₹{cartTotal}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-emerald-400 font-bold">₹{(cartTotal + (cartTotal * gstRate) + deliveryFee).toFixed(2)}</p>
+                      <p className="text-[10px] text-slate-500">Includes GST + Delivery</p>
+                    </div>
+                  </div>
+
+                  {/* Mock Friend (To simulate the feature) */}
+                  <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-lg border border-white/5 opacity-50 border-dashed">
+                    <div className="flex items-center gap-3">
+                      <span className="bg-slate-700 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold animate-pulse">?</span>
+                      <div>
+                        <p className="font-bold text-white italic">Waiting for friends...</p>
+                        <p className="text-xs text-slate-400">They will appear here</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-700 pt-4 mb-6">
+                  <div className="flex justify-between text-sm text-slate-400 mb-1">
+                    <span>Subtotal</span>
+                    <span>₹{cartTotal}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-slate-400 mb-1">
+                    <span>Delivery Partner Fee</span>
+                    <span>₹{deliveryFee}</span>
+                  </div>
+                  <div className="flex justify-between text-sm text-slate-400 mb-3">
+                    <span>GST (5%)</span>
+                    <span>₹{(cartTotal * gstRate).toFixed(2)}</span>
+                  </div>
+                  <div className="flex justify-between font-black text-xl text-white">
+                    <span>Grand Total</span>
+                    <span>₹{(cartTotal + deliveryFee + (cartTotal * gstRate)).toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <button onClick={() => {
+                   setSplitRoomMode(false);
+                   checkoutCart();
+                }} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 rounded-xl transition shadow-lg shadow-emerald-500/20">
+                  Host Pays All (₹{(cartTotal + deliveryFee + (cartTotal * gstRate)).toFixed(2)}) →
                 </button>
               </div>
             </div>

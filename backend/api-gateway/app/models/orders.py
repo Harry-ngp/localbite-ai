@@ -23,6 +23,7 @@ class Order(Base):
     # STATUS UPDATE: It will now flow: pending -> offered -> assigned -> delivered
     status = Column(String, default="pending_assignment")
     created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     rider_id = Column(String, ForeignKey("riders.id"), nullable=True)
     restaurant_id = Column(String, nullable=True)  # NEW: Link to restaurant/partner
     customer_id = Column(String, nullable=True)  # NEW: Link to customer
