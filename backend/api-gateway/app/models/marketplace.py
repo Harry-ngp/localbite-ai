@@ -10,6 +10,7 @@ class MarketplaceUser(Base):
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email = Column(String, unique=True, nullable=False)
+    password_hash = Column(String, nullable=True) # Added for Authentication
     role = Column(String, nullable=False) # 'customer', 'rider', 'partner'
     created_at = Column(DateTime, default=datetime.utcnow)
     
@@ -49,3 +50,23 @@ class MenuItem(Base):
     
     # Relationships
     restaurant = relationship("Restaurant", back_populates="menu_items")
+
+class SplitRoom(Base):
+    __tablename__ = "split_rooms"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    host_id = Column(UUID(as_uuid=True), ForeignKey("marketplace_users.id", ondelete="CASCADE"), nullable=False)
+    room_code = Column(String, unique=True, nullable=False)
+    room_pin = Column(String, nullable=False) # Secure PIN for private rooms
+    cart_total = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    is_active = Column(Boolean, default=True)
+
+class SplitRoomMember(Base):
+    __tablename__ = "split_room_members"
+    
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    room_id = Column(UUID(as_uuid=True), ForeignKey("split_rooms.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("marketplace_users.id", ondelete="CASCADE"), nullable=False)
+    share_amount = Column(Float, default=0.0)
+    joined_at = Column(DateTime, default=datetime.utcnow)

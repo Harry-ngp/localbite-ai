@@ -1,0 +1,9 @@
+{
+  "venvPath": "backend/api-gateway",
+  "venv": "venv",
+  "executionEnvironments": [
+    {
+      "root": "backend/api-gateway"
+    }
+  ]
+}

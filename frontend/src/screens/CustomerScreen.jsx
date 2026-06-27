@@ -71,9 +71,14 @@ export default function CustomerScreen({ goBack, addGlobalOrder }) {
     // --- 🚨 NEW: SPLIT BILL STATES ---
     const [showCheckoutOptions, setShowCheckoutOptions] = useState(false);
     const [splitRoomMode, setSplitRoomMode] = useState(false);
-    const [splitFriends, setSplitFriends] = useState([
-      { id: 1, name: "You (Host)", amount: 0, isReady: true }
-    ]);
+    const [splitFriends, setSplitFriends] = useState([{ id: 1, name: 'You (Host)', amount: 0, isReady: true }]);
+    
+    // --- API SPLIT ROOM STATE ---
+    const [roomState, setRoomState] = useState('idle'); // idle, create, join, active
+    const [roomPin, setRoomPin] = useState('');
+    const [joinCode, setJoinCode] = useState('');
+    const [roomDetails, setRoomDetails] = useState(null);
+    
     const deliveryFee = 40;
     const gstRate = 0.05;
 
@@ -97,7 +102,6 @@ export default function CustomerScreen({ goBack, addGlobalOrder }) {
       if (saved) setSavedAddresses(JSON.parse(saved));
     }, []);
 
-    // 🚨 Connect customer WebSocket on mount for real-time updates
     useEffect(() => {
       wsRef.current = apiService.connectCustomerWS(
         currentCustomerId,
@@ -142,6 +146,33 @@ export default function CustomerScreen({ goBack, addGlobalOrder }) {
         if (wsRef.current) wsRef.current.close();
       };
     }, [currentCustomerId]);
+
+    // --- 🚨 ZOMATO-STYLE RIDER ANIMATION ---
+    useEffect(() => {
+      let interval;
+      if (orderRequestFlow.riderAssigned && !isDelivered) {
+        // Start from restaurant
+        setRiderLocation([12.9816, 77.5846]);
+        
+        // Define path coordinates (from restaurant to customer)
+        const path = [[12.9816, 77.5846], [12.9791, 77.5871], [12.9766, 77.5896], [12.9741, 77.5921], [12.9716, 77.5946]];
+        let currentStep = 0;
+        
+        interval = setInterval(() => {
+          if (currentStep < path.length - 1) {
+            currentStep++;
+            setRiderLocation(path[currentStep]);
+          } else {
+            // Reached destination
+            clearInterval(interval);
+          }
+        }, 4000); // Move every 4 seconds
+      }
+      
+      return () => {
+        if (interval) clearInterval(interval);
+      };
+    }, [orderRequestFlow.riderAssigned, isDelivered]);
   
     // --- 2. AI SEARCH FUNCTION ---
     const handleVibeSearch = async (e) => {
@@ -197,6 +228,43 @@ export default function CustomerScreen({ goBack, addGlobalOrder }) {
     const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   
     // --- 5. 🚨 DYNAMIC CHECKOUT WITH ORDER TRACKING ---
+  // --- SPLIT ROOM API HANDLERS ---
+  const handleCreateRoom = async () => {
+    if (!roomPin || roomPin.length < 4) return toast('PIN must be at least 4 digits', 'error');
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/split/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ host_id: currentCustomerId, room_pin: roomPin })
+      });
+      if (!response.ok) throw new Error('Failed to create room');
+      const data = await response.json();
+      setRoomDetails({ ...data, isHost: true });
+      setRoomState('active');
+      toast(`Room Created! Code: ${data.room_code}`, 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+
+  const handleJoinRoom = async () => {
+    if (!joinCode || !roomPin) return toast('Enter Code and PIN', 'error');
+    try {
+      const response = await fetch('http://localhost:8000/api/v1/split/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: currentCustomerId, room_code: joinCode.toUpperCase(), room_pin: roomPin })
+      });
+      if (!response.ok) throw new Error('Invalid Code or PIN');
+      const data = await response.json();
+      setRoomDetails({ ...data, isHost: false });
+      setRoomState('active');
+      toast('Successfully joined the room!', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+
   const checkoutCart = async () => {
     if (cart.length === 0) return;
     setStatus(`⏳ Sending order to ${selectedRestaurant.name}...`);
@@ -386,20 +454,40 @@ export default function CustomerScreen({ goBack, addGlobalOrder }) {
             </div>
             
             {!isDelivered ? (
-               <div className="w-full h-[400px] bg-slate-800 rounded-3xl flex items-center justify-center border border-white/10">
-                  <div className="text-center">
-                    <p className="text-slate-400 mb-4">
-                      {orderRequestFlow.riderAssigned ? '📍 Tracking rider location...' : '⏳ Waiting for GPS Ping...'}
-                    </p>
-                    <div className="w-12 h-12 mx-auto border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
-                  </div>
+               <div className="w-full h-[400px] bg-slate-800 rounded-3xl overflow-hidden border border-emerald-500/30 relative">
+                  {orderRequestFlow.riderAssigned ? (
+                    <MapContainer center={[12.9716, 77.5946]} zoom={14} className="w-full h-full" zoomControl={false}>
+                      <TileLayer
+                        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                        attribution='&copy; <a href="https://carto.com/">Carto</a>'
+                      />
+                      {/* Customer Location (Destination) */}
+                      <Marker position={[12.9716, 77.5946]} icon={new L.Icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/1008/1008064.png', iconSize: [30, 30] })} />
+                      
+                      {/* Restaurant Location (Origin) */}
+                      <Marker position={[12.9816, 77.5846]} icon={new L.Icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3170/3170733.png', iconSize: [30, 30] })} />
+                      
+                      {/* Route Polyline */}
+                      <Polyline positions={[[12.9816, 77.5846], [12.9766, 77.5896], [12.9716, 77.5946]]} color="#34d399" weight={4} dashArray="10, 10" />
+                      
+                      {/* Moving Rider (Simulated for Zomato-like feel) */}
+                      <Marker position={riderLocation || [12.9816, 77.5846]} icon={bikeIcon} />
+                    </MapContainer>
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center">
+                      <p className="text-slate-400 mb-4 font-bold tracking-widest uppercase text-sm">
+                        ⏳ Waiting for GPS Ping...
+                      </p>
+                      <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin shadow-[0_0_15px_rgba(16,185,129,0.5)]"></div>
+                    </div>
+                  )}
                </div>
             ) : (
               <div className="mt-4 text-center bg-slate-800/40 p-10 rounded-3xl border border-emerald-500/30">
                 <h3 className="text-3xl font-bold text-white mb-3">🎉 Delivery Complete!</h3>
                 <button 
                   onClick={() => setIsTracking(false)} 
-                  className="mt-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2 px-6 rounded-lg"
+                  className="mt-4 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold py-2 px-6 rounded-lg shadow-[0_0_20px_rgba(16,185,129,0.3)] transition"
                 >
                   Back to Home
                 </button>
@@ -483,80 +571,114 @@ export default function CustomerScreen({ goBack, addGlobalOrder }) {
             </div>
           )}
 
-          {/* 🚨 SPLIT BILL ROOM MODAL */}
+        {/* 🚨 SPLIT BILL ROOM MODAL (API DRIVEN) */}
           {splitRoomMode && (
-            <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in-up">
               <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 w-full max-w-lg shadow-2xl relative">
-                <button onClick={() => setSplitRoomMode(false)} className="absolute top-4 right-4 text-slate-400 hover:text-white">✕</button>
+                <button onClick={() => { setSplitRoomMode(false); setRoomState('idle'); }} className="absolute top-4 right-4 text-slate-400 hover:text-white">✕</button>
                 
-                <h2 className="text-2xl font-black text-white mb-2">Split Bill Room 🍕</h2>
-                <p className="text-sm text-slate-400 mb-6">Share this code with friends so they can add to your cart.</p>
-                
-                <div className="bg-slate-800 p-4 rounded-xl flex items-center justify-between mb-6 border border-emerald-500/30">
+                {roomState === 'idle' && (
+                  <div className="text-center py-4">
+                    <h2 className="text-2xl font-black text-white mb-2">Split Bill 🍕</h2>
+                    <p className="text-sm text-slate-400 mb-8">Share the cost of this order with friends.</p>
+                    <div className="flex flex-col gap-4">
+                      <button onClick={() => setRoomState('create')} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 rounded-xl transition">
+                        Create Private Room
+                      </button>
+                      <button onClick={() => setRoomState('join')} className="w-full bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-emerald-500/30 font-bold py-4 rounded-xl transition">
+                        Join Existing Room
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {roomState === 'create' && (
+                  <div className="py-2">
+                    <h2 className="text-2xl font-black text-white mb-2">Create Room</h2>
+                    <p className="text-sm text-slate-400 mb-6">Set a 4-digit PIN to secure your private split bill room.</p>
+                    <input 
+                      type="text" 
+                      placeholder="Enter 4-Digit PIN" 
+                      value={roomPin} 
+                      onChange={(e) => setRoomPin(e.target.value)} 
+                      maxLength={4}
+                      className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl py-4 px-5 outline-none focus:border-emerald-500 text-center text-2xl tracking-[0.5em] mb-6 font-black"
+                    />
+                    <button onClick={handleCreateRoom} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 rounded-xl transition shadow-lg shadow-emerald-500/20">
+                      Generate Room Code →
+                    </button>
+                  </div>
+                )}
+
+                {roomState === 'join' && (
+                  <div className="py-2">
+                    <h2 className="text-2xl font-black text-white mb-2">Join Room</h2>
+                    <p className="text-sm text-slate-400 mb-6">Enter the Host's Room Code and PIN.</p>
+                    <input 
+                      type="text" 
+                      placeholder="Room Code (e.g. LB-XXXX)" 
+                      value={joinCode} 
+                      onChange={(e) => setJoinCode(e.target.value)} 
+                      className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl py-4 px-5 outline-none focus:border-emerald-500 text-center text-xl mb-4 uppercase font-mono"
+                    />
+                    <input 
+                      type="text" 
+                      placeholder="4-Digit PIN" 
+                      value={roomPin} 
+                      onChange={(e) => setRoomPin(e.target.value)} 
+                      maxLength={4}
+                      className="w-full bg-slate-800 border border-slate-700 text-white rounded-xl py-4 px-5 outline-none focus:border-emerald-500 text-center text-2xl tracking-[0.5em] mb-6 font-black"
+                    />
+                    <button onClick={handleJoinRoom} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 rounded-xl transition shadow-lg shadow-emerald-500/20">
+                      Join Room →
+                    </button>
+                  </div>
+                )}
+
+                {roomState === 'active' && roomDetails && (
                   <div>
-                    <p className="text-xs text-emerald-400 font-bold uppercase">Room Code</p>
-                    <p className="text-2xl font-mono tracking-widest text-white">LB-9X4A</p>
-                  </div>
-                  <button className="bg-emerald-500/20 text-emerald-400 px-4 py-2 rounded-lg font-bold hover:bg-emerald-500 hover:text-slate-900 transition">
-                    Share Link
-                  </button>
-                </div>
-
-                <div className="space-y-4 mb-6">
-                  <h3 className="font-bold text-slate-300">Live Members & Split</h3>
-                  
-                  {/* Host */}
-                  <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-lg border border-white/5">
-                    <div className="flex items-center gap-3">
-                      <span className="bg-emerald-500 text-slate-900 w-8 h-8 rounded-full flex items-center justify-center font-bold">H</span>
+                    <h2 className="text-2xl font-black text-white mb-2">Split Bill Room 🍕</h2>
+                    <p className="text-sm text-slate-400 mb-6">Share this code & PIN with friends.</p>
+                    
+                    <div className="bg-slate-800 p-4 rounded-xl flex items-center justify-between mb-6 border border-emerald-500/30">
                       <div>
-                        <p className="font-bold text-white">You (Host)</p>
-                        <p className="text-xs text-slate-400">Cart Total: ₹{cartTotal}</p>
+                        <p className="text-xs text-emerald-400 font-bold uppercase">Room Code</p>
+                        <p className="text-2xl font-mono tracking-widest text-white">{roomDetails.room_code}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-amber-400 font-bold uppercase">Secret PIN</p>
+                        <p className="text-2xl font-mono tracking-widest text-white">{roomPin}</p>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <p className="text-emerald-400 font-bold">₹{(cartTotal + (cartTotal * gstRate) + deliveryFee).toFixed(2)}</p>
-                      <p className="text-[10px] text-slate-500">Includes GST + Delivery</p>
-                    </div>
-                  </div>
 
-                  {/* Mock Friend (To simulate the feature) */}
-                  <div className="flex justify-between items-center bg-slate-800/50 p-3 rounded-lg border border-white/5 opacity-50 border-dashed">
-                    <div className="flex items-center gap-3">
-                      <span className="bg-slate-700 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold animate-pulse">?</span>
-                      <div>
-                        <p className="font-bold text-white italic">Waiting for friends...</p>
-                        <p className="text-xs text-slate-400">They will appear here</p>
+                    <div className="border-t border-slate-700 pt-4 mb-6">
+                      <div className="flex justify-between text-sm text-slate-400 mb-1">
+                        <span>Subtotal</span>
+                        <span>₹{cartTotal}</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-slate-400 mb-1">
+                        <span>Delivery Partner Fee</span>
+                        <span>₹{deliveryFee}</span>
+                      </div>
+                      <div className="flex justify-between text-sm text-slate-400 mb-3">
+                        <span>GST (5%)</span>
+                        <span>₹{(cartTotal * gstRate).toFixed(2)}</span>
+                      </div>
+                      <div className="flex justify-between font-black text-xl text-white">
+                        <span>Grand Total</span>
+                        <span>₹{(cartTotal + deliveryFee + (cartTotal * gstRate)).toFixed(2)}</span>
                       </div>
                     </div>
-                  </div>
-                </div>
 
-                <div className="border-t border-slate-700 pt-4 mb-6">
-                  <div className="flex justify-between text-sm text-slate-400 mb-1">
-                    <span>Subtotal</span>
-                    <span>₹{cartTotal}</span>
+                    <button onClick={() => {
+                       setSplitRoomMode(false);
+                       setRoomState('idle');
+                       checkoutCart();
+                    }} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 rounded-xl transition shadow-lg shadow-emerald-500/20">
+                      {roomDetails.isHost ? 'Confirm & Pay All →' : 'Pay My Share →'}
+                    </button>
                   </div>
-                  <div className="flex justify-between text-sm text-slate-400 mb-1">
-                    <span>Delivery Partner Fee</span>
-                    <span>₹{deliveryFee}</span>
-                  </div>
-                  <div className="flex justify-between text-sm text-slate-400 mb-3">
-                    <span>GST (5%)</span>
-                    <span>₹{(cartTotal * gstRate).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between font-black text-xl text-white">
-                    <span>Grand Total</span>
-                    <span>₹{(cartTotal + deliveryFee + (cartTotal * gstRate)).toFixed(2)}</span>
-                  </div>
-                </div>
-
-                <button onClick={() => {
-                   setSplitRoomMode(false);
-                   checkoutCart();
-                }} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 rounded-xl transition shadow-lg shadow-emerald-500/20">
-                  Host Pays All (₹{(cartTotal + deliveryFee + (cartTotal * gstRate)).toFixed(2)}) →
-                </button>
+                )}
               </div>
             </div>
           )}

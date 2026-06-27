@@ -3,9 +3,9 @@ import requests
 
 class GeocoderNLP:
     def __init__(self):
-        print("🧠 Loading HuggingFace NER Model into memory...")
+        print("Loading HuggingFace NER Model into memory...")
         self.ner_pipeline = pipeline("ner", aggregation_strategy="simple")
-        print("✅ AI Brain Online!")
+        print("AI Brain Online!")
 
     def extract_landmarks(self, address_text: str):
         raw_entities = self.ner_pipeline(address_text)
@@ -20,7 +20,7 @@ class GeocoderNLP:
             return None, None
             
         search_query = " ".join(landmarks[:3])
-        print(f"🌍 Asking OpenStreetMap for coordinates of: {search_query}")
+        print(f"Asking OpenStreetMap for coordinates of: {search_query}")
         
         url = "https://nominatim.openstreetmap.org/search"
         params = {
@@ -40,11 +40,11 @@ class GeocoderNLP:
             if data:
                 return float(data[0]["lat"]), float(data[0]["lon"])
         except Exception as e:
-            print(f"⚠️ Map API Failed/Timed Out: {e}")
+            print(f"Map API Failed/Timed Out: {e}")
             
         # 🚨 CRITICAL CHANGE 2: THE FAILSAFE! 
         # If OSM is down, we don't freeze. We force the Nagpur coordinates!
-        print("🛟 API down! Injecting Fallback Coordinates for Nagpur (Hanuman Temple area)...")
+        print("API down! Injecting Fallback Coordinates for Nagpur (Hanuman Temple area)...")
         return 21.1458, 79.0882
 
 # Create our global instance

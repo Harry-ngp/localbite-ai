@@ -12,6 +12,8 @@ from app.models import orders, riders
 from app.api.router import api_router
 from app.core.websocket import router as websocket_router
 from app.api.partners import router as partners_router 
+from app.api.auth import router as auth_router
+from app.api.split_bill import router as split_bill_router
 from app.services.monitor import monitor_stuck_orders
 import asyncio
 
@@ -43,6 +45,8 @@ app.include_router(api_router, prefix="/api/v1")
 app.include_router(websocket_router)
 app.include_router(partners_router, prefix="/api/v1/partners", tags=["Partners"])
 app.include_router(customer_router, prefix="/api/v1/customer", tags=["Customer Tools"])
+app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+app.include_router(split_bill_router, prefix="/api/v1/split", tags=["Split Bill"])
 # ==========================================
 # 5. THE LOGIN ENDPOINT
 # ==========================================
