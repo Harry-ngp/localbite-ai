@@ -2,7 +2,7 @@ from sqlalchemy import Column, String, Float, Boolean, ForeignKey, DateTime
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from app.core.database import Base
 
 class MarketplaceUser(Base):
@@ -12,7 +12,7 @@ class MarketplaceUser(Base):
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=True) # Added for Authentication
     role = Column(String, nullable=False) # 'customer', 'rider', 'partner'
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     restaurants = relationship("Restaurant", back_populates="owner")
@@ -29,7 +29,7 @@ class Restaurant(Base):
     longitude = Column(Float, nullable=False)
     image_url = Column(String)
     rating = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     owner = relationship("MarketplaceUser", back_populates="restaurants")
@@ -46,7 +46,7 @@ class MenuItem(Base):
     category = Column(String, nullable=False)
     image_url = Column(String)
     is_available = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
     restaurant = relationship("Restaurant", back_populates="menu_items")
@@ -59,7 +59,7 @@ class SplitRoom(Base):
     room_code = Column(String, unique=True, nullable=False)
     room_pin = Column(String, nullable=False) # Secure PIN for private rooms
     cart_total = Column(Float, default=0.0)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     is_active = Column(Boolean, default=True)
 
 class SplitRoomMember(Base):
@@ -69,4 +69,4 @@ class SplitRoomMember(Base):
     room_id = Column(UUID(as_uuid=True), ForeignKey("split_rooms.id", ondelete="CASCADE"), nullable=False)
     user_id = Column(UUID(as_uuid=True), ForeignKey("marketplace_users.id", ondelete="CASCADE"), nullable=False)
     share_amount = Column(Float, default=0.0)
-    joined_at = Column(DateTime, default=datetime.utcnow)
+    joined_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

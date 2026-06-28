@@ -4,7 +4,7 @@ import requests
 class GeocoderNLP:
     def __init__(self):
         print("Loading HuggingFace NER Model into memory...")
-        self.ner_pipeline = pipeline("ner", aggregation_strategy="simple")
+        self.ner_pipeline = pipeline("token-classification", aggregation_strategy="simple")
         print("AI Brain Online!")
 
     def extract_landmarks(self, address_text: str):

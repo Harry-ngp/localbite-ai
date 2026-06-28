@@ -1,481 +1,838 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE, apiService } from '../services/api';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, LineChart, Line, CartesianGrid, Legend
+} from 'recharts';
 
+// ─── Custom Tooltip ───────────────────────────────────────────────────────────
+const CustomTooltip = ({ active, payload, label }) => {
+  if (active && payload?.length) {
+    return (
+      <div className="bg-slate-800 border border-white/10 rounded-xl px-4 py-2 text-sm shadow-xl">
+        <p className="text-slate-400 font-medium">{label}</p>
+        <p className="text-emerald-400 font-black">₹{payload[0]?.value || payload[0]?.value === 0 ? payload[0].value : ''}</p>
+      </div>
+    );
+  }
+  return null;
+};
+
+const PieTooltip = ({ active, payload }) => {
+  if (active && payload?.length) {
+    return (
+      <div className="bg-slate-800 border border-white/10 rounded-xl px-3 py-2 text-xs shadow-xl">
+        <p className="text-white font-bold">{payload[0].name}</p>
+        <p className="text-emerald-400 font-black">{payload[0].value} orders</p>
+      </div>
+    );
+  }
+  return null;
+};
+
+// ─── Delete Confirm Modal ─────────────────────────────────────────────────────
+function DeleteModal({ item, onConfirm, onCancel }) {
+  return (
+    <div className="fixed inset-0 z-[200] bg-black/70 flex items-center justify-center p-4">
+      <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-sm animate-bounce-in">
+        <div className="text-4xl text-center mb-3">⚠️</div>
+        <h3 className="text-lg font-black text-white text-center mb-2">Delete "{item?.name}"?</h3>
+        <p className="text-slate-400 text-sm text-center mb-6">This item will be removed from your menu permanently.</p>
+        <div className="flex gap-3">
+          <button onClick={onCancel} className="flex-1 py-3 rounded-xl bg-slate-800 text-slate-300 font-bold hover:bg-slate-700 transition">Cancel</button>
+          <button onClick={onConfirm} className="flex-1 py-3 rounded-xl bg-rose-500 text-white font-black hover:bg-rose-400 transition">Delete</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Stat Card ────────────────────────────────────────────────────────────────
+function StatCard({ label, value, sub, color, icon, animate }) {
+  return (
+    <div className={`bg-slate-800/50 p-5 rounded-3xl border border-white/5 shadow-lg hover:border-${color}-500/30 transition-all hover:-translate-y-0.5 group`}>
+      <div className="flex items-start justify-between mb-3">
+        <p className="text-slate-400 text-sm font-medium">{label}</p>
+        <span className="text-2xl">{icon}</span>
+      </div>
+      <p className={`text-3xl font-black text-${color === 'amber' ? 'amber' : color === 'rose' ? 'rose' : color === 'blue' ? 'blue' : 'white'}-400 ${animate ? 'animate-count-up' : ''}`}>{value}</p>
+      {sub && <p className="text-xs text-slate-500 mt-1 font-medium">{sub}</p>}
+    </div>
+  );
+}
+
+// ─── Kanban Card ──────────────────────────────────────────────────────────────
+function KanbanCard({ order, onAction, actionLabel, actionColor }) {
+  const timeAgo = order.time || 'Recently';
+  const rawDesc = order.item_description || order.items || '';
+  const isGroupOrder = rawDesc.startsWith('[GROUP ORDER');
+  // Strip the prefix for a cleaner display inside the card
+  const cleanDesc = isGroupOrder ? rawDesc.replace(/^\[GROUP ORDER ×\d+\]\s*/, '') : rawDesc;
+
+  return (
+    <div className={`kanban-card rounded-2xl p-4 mb-3 transition group ${
+      isGroupOrder
+        ? 'bg-violet-900/20 border border-violet-500/30 hover:border-violet-400/50'
+        : 'bg-slate-900/80 border border-white/5 hover:border-amber-500/20'
+    }`}>
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+            <p className="text-xs font-mono text-slate-500">{order.id?.slice(0, 8) || 'N/A'}</p>
+            {isGroupOrder && (
+              <span className="text-[9px] bg-violet-500/20 text-violet-400 border border-violet-500/30 px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider shrink-0">
+                👥 Split Bill
+              </span>
+            )}
+          </div>
+          <p className="font-bold text-white text-sm mt-0.5 line-clamp-2">{cleanDesc}</p>
+        </div>
+        <span className="text-xs text-slate-500 shrink-0 ml-2">{timeAgo}</span>
+      </div>
+      <div className="flex justify-between items-center">
+        <div>
+          <p className={`font-black text-lg ${isGroupOrder ? 'text-violet-300' : 'text-amber-400'}`}>
+            {order.amount ? `₹${order.amount}` : order.total}
+          </p>
+          {isGroupOrder && <p className="text-[10px] text-violet-400/70 font-bold">Full group total</p>}
+        </div>
+        {onAction && (
+          <button onClick={() => onAction(order.id)}
+            className={`text-xs font-black px-4 py-2 rounded-xl transition transform hover:scale-105 ${
+              actionColor === 'green' ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' :
+              actionColor === 'blue' ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-500/20' :
+              'bg-amber-600 hover:bg-amber-500 text-white shadow-lg shadow-amber-500/20'
+            }`}>
+            {actionLabel}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Component ───────────────────────────────────────────────────────────
 export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalOrderStatus }) {
-   const [email, setEmail] = useState('spice.route@gmail.com');
-   const [partnerId, setPartnerId] = useState(null);
-   const [restaurant, setRestaurant] = useState(null);
-   const [menuItems, setMenuItems] = useState([]);
-   const [status, setStatus] = useState('');
-   
-   const [activeTab, setActiveTab] = useState('overview'); 
-   const [isStoreOpen, setIsStoreOpen] = useState(true);
- 
-   const [orderTab, setOrderTab] = useState('active'); 
-   const [orders, setOrders] = useState([]);
-   const [dynamicStats, setDynamicStats] = useState({ revenue: 0, activeOrders: 0, completedToday: 0, avgRating: 4.0 });
-   
-   const wsRef = useRef(null);
-   const refreshInterval = useRef(null);
-   const [wsStatus, setWsStatus] = useState('disconnected');
- 
-   const [restName, setRestName] = useState('The Spice Route');
-   const [restDesc, setRestDesc] = useState('Authentic North Indian cuisine.');
-   const [restAddr, setRestAddr] = useState('123 Food Street, Nagpur');
-   const [restImg, setRestImg] = useState('https://images.unsplash.com/photo-1589302168068-964664d93cb0?w=500&q=80');
- 
-   const [itemName, setItemName] = useState('');
-   const [itemPrice, setItemPrice] = useState('');
-   const [itemCat, setItemCat] = useState('');
-   const [itemImg, setItemImg] = useState('');
+  const [email, setEmail] = useState('spice.route@gmail.com');
+  const [partnerId, setPartnerId] = useState(null);
+  const [restaurant, setRestaurant] = useState(null);
+  const [menuItems, setMenuItems] = useState([]);
+  const [status, setStatus] = useState('');
+  const [activeTab, setActiveTab] = useState('overview');
+  const [isStoreOpen, setIsStoreOpen] = useState(true);
+  const [orders, setOrders] = useState([]);
+  const [dynamicStats, setDynamicStats] = useState({ revenue: 0, activeOrders: 0, completedToday: 0, avgRating: 4.0 });
+  const [weeklyRevenue, setWeeklyRevenue] = useState([
+    { day: 'Mon', revenue: 0 }, { day: 'Tue', revenue: 0 }, { day: 'Wed', revenue: 0 },
+    { day: 'Thu', revenue: 0 }, { day: 'Fri', revenue: 0 }, { day: 'Sat', revenue: 0 }, { day: 'Sun', revenue: 0 },
+  ]);
+  const wsRef = useRef(null);
+  const refreshInterval = useRef(null);
+  const [wsStatus, setWsStatus] = useState('disconnected');
 
-   // 🚨 CRITICAL FIX: Merge Live LocalStorage Sync with Database Orders
-   const unifiedSafeOrders = [...orders, ...globalOrders.filter(go => !orders.find(o => o.id === go.id))]
-     .filter(o => {
-       const orderKitchen = (o.kitchen || o.restaurant_name || "").toLowerCase().trim();
-       const myKitchen = (restaurant?.name || "").toLowerCase().trim();
-       if (orderKitchen && myKitchen && orderKitchen !== myKitchen) return false;
-       return true;
-     });
- 
-   const handleImageUpload = (e) => {
-     const file = e.target.files[0];
-     if (file) {
-       const reader = new FileReader();
-       reader.onloadend = () => setItemImg(reader.result); 
-       reader.readAsDataURL(file);
-     }
-   };
- 
-    const updateOrderStatus = async (id, newStatus) => {
-      setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
-      setStatus(`⏳ Updating order...`);
-      
-      try {
-        let success = false;
-        if (newStatus === 'accepted') {
-          success = await apiService.acceptOrderAsPartner(id, restaurant.id);
-        } else if (newStatus === 'preparing') {
-          success = await apiService.markOrderPreparing(id);
-        } else if (newStatus === 'ready') {
-          success = await apiService.markOrderReady(id);
-        }
-        
-        if (success) {
-          setStatus(`✅ Order updated to ${newStatus}`);
-          // Also update globalOrders
-          if (updateGlobalOrderStatus) {
-            updateGlobalOrderStatus(id, newStatus, { restaurant_name: restaurant.name });
-          }
-        } else {
-          setStatus(`❌ Failed to update order status`);
-          // Revert local state
-          setOrders(prev => prev.map(o => o.id === id ? { ...o, status: o.status } : o));
-        }
-        
-        // Refresh orders from backend
-        setTimeout(() => fetchPartnerOrders(restaurant.id), 500);
-      } catch (e) { 
-        console.log("Error updating order:", e); 
-        setStatus(`❌ Error: ${e.message}`);
-      }
-      
-      setTimeout(() => setStatus(''), 3000);
+  const [restName, setRestName] = useState('The Spice Route');
+  const [restDesc, setRestDesc] = useState('Authentic North Indian cuisine.');
+  const [restAddr, setRestAddr] = useState('123 Food Street, Nagpur');
+  const [restImg, setRestImg] = useState('https://images.unsplash.com/photo-1589302168068-964664d93cb0?w=500&q=80');
+
+  const [itemName, setItemName] = useState('');
+  const [itemPrice, setItemPrice] = useState('');
+  const [itemCat, setItemCat] = useState('');
+  const [itemImg, setItemImg] = useState('');
+  const [itemInStock, setItemInStock] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [menuPreview, setMenuPreview] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+
+  // Settings tab state
+  const [settingsRestName, setSettingsRestName] = useState('');
+  const [settingsRestDesc, setSettingsRestDesc] = useState('');
+  const [settingsRestAddr, setSettingsRestAddr] = useState('');
+  const [operatingHours, setOperatingHours] = useState({
+    Mon: { open: true, start: '09:00', end: '22:00' },
+    Tue: { open: true, start: '09:00', end: '22:00' },
+    Wed: { open: true, start: '09:00', end: '22:00' },
+    Thu: { open: true, start: '09:00', end: '22:00' },
+    Fri: { open: true, start: '09:00', end: '23:00' },
+    Sat: { open: true, start: '10:00', end: '23:00' },
+    Sun: { open: false, start: '10:00', end: '20:00' },
+  });
+  const CUISINE_TAGS = ['North Indian', 'South Indian', 'Chinese', 'Italian', 'Fast Food', 'Desserts', 'Beverages', 'Healthy', 'Biryani'];
+  const [selectedTags, setSelectedTags] = useState(['North Indian']);
+
+  // Merged orders (DB + global)
+  const unifiedSafeOrders = [...orders, ...globalOrders.filter(go => !orders.find(o => o.id === go.id))]
+    .filter(o => {
+      const orderKitchen = (o.kitchen || o.restaurant_name || '').toLowerCase().trim();
+      const myKitchen = (restaurant?.name || '').toLowerCase().trim();
+      if (orderKitchen && myKitchen && orderKitchen !== myKitchen) return false;
+      return true;
+    });
+
+  const newOrders = unifiedSafeOrders.filter(o => o.status === 'new');
+  const preparingOrders = unifiedSafeOrders.filter(o => o.status === 'accepted' || o.status === 'preparing');
+  const readyOrders = unifiedSafeOrders.filter(o => o.status === 'ready');
+  const completedOrders = unifiedSafeOrders.filter(o => o.status === 'completed' || o.status === 'delivered');
+
+  // Pie data
+  const pieData = [
+    { name: 'Active', value: newOrders.length + preparingOrders.length },
+    { name: 'Ready', value: readyOrders.length },
+    { name: 'Completed', value: completedOrders.length },
+  ].filter(d => d.value > 0);
+  const PIE_COLORS = ['#f59e0b', '#34d399', '#10b981'];
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) { const reader = new FileReader(); reader.onloadend = () => setItemImg(reader.result); reader.readAsDataURL(file); }
+  };
+
+  const updateOrderStatus = async (id, newStatus) => {
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
+    setStatus(`⏳ Updating...`);
+    try {
+      let success = false;
+      if (newStatus === 'accepted') success = await apiService.acceptOrderAsPartner(id, restaurant.id);
+      else if (newStatus === 'preparing') success = await apiService.markOrderPreparing(id);
+      else if (newStatus === 'ready') success = await apiService.markOrderReady(id);
+      if (success) {
+        setStatus(`✅ Order → ${newStatus}`);
+        if (updateGlobalOrderStatus) updateGlobalOrderStatus(id, newStatus, { restaurant_name: restaurant.name });
+        if (soundEnabled) { try { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play(); } catch {} }
+      } else { setStatus('❌ Failed to update'); }
+      setTimeout(() => fetchPartnerOrders(restaurant.id), 500);
+    } catch (e) { setStatus(`❌ ${e.message}`); }
+    setTimeout(() => setStatus(''), 3000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (refreshInterval.current) clearInterval(refreshInterval.current);
+      if (wsRef.current) wsRef.current.close();
     };
- 
-   useEffect(() => {
-     return () => {
-       if (refreshInterval.current) clearInterval(refreshInterval.current);
-       if (wsRef.current) wsRef.current.close();
-     };
-   }, []);
- 
-   const handleEditItem = (item) => {
-     setItemName(item.name); setItemPrice(item.price); setItemCat(item.category); setItemImg(item.image_url);
-     setStatus('✏️ Edit mode: Update details and publish.');
-   };
- 
-   const toggleStore = () => {
-     setIsStoreOpen(!isStoreOpen);
-     setStatus(!isStoreOpen ? '✅ Store is now ONLINE' : '🛑 Store is now OFFLINE');
-     setTimeout(() => setStatus(''), 3000);
-   };
- 
-   const handleLogin = async () => {
-     setStatus('⏳ Authenticating...');
-     try {
-       const res = await fetch("http://127.0.0.1:8000/api/v1/partners/login", {
-         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email })
-       });
-       if (res.ok) {
-         const data = await res.json();
-         setPartnerId(data.partner_id);
-         if (data.restaurant) {
-           setRestaurant(data.restaurant);
-           fetchMenu(data.restaurant.id);
-           fetchPartnerOrders(data.restaurant.id);
-           fetchPartnerAnalytics(data.restaurant.id);
-           
-           // 🚨 NEW: Connect WebSocket for real-time updates
-           wsRef.current = apiService.connectPartnerWS(
-             data.partner_id,
-             (update) => {
-               console.log("📨 Partner received update:", update);
-               
-               // Listen for all order-related updates
-               if (update.type === "order_placed" || update.type === "order_accepted" || 
-                   update.type === "gps_update" || update.type === "delivery_complete" ||
-                   update.type === "rider_assigned" || update.type === "delivery_started") {
-                 
-                 // Refresh orders in real-time
-                 console.log("🔄 Refreshing orders due to:", update.type);
-                 fetchPartnerOrders(data.restaurant.id);
-                 fetchPartnerAnalytics(data.restaurant.id);
-               }
-             },
-             (status) => {
-               setWsStatus(status);
-               if (status === 'connected') {
-                 console.log("✅ Partner WebSocket connected - listening for order updates");
-               }
-             }
-           );
-           
-           // Still keep polling as fallback every 10 seconds
-           refreshInterval.current = setInterval(() => {
-             fetchPartnerOrders(data.restaurant.id);
-             fetchPartnerAnalytics(data.restaurant.id);
-           }, 10000);
-         }
-         setStatus('');
-       } else setStatus('❌ Login failed.');
-     } catch (e) { setStatus('❌ Server connection failed.'); }
-   };
- 
-   const fetchPartnerOrders = async (restaurantId) => {
-     try {
-       const res = await fetch(`${API_BASE}/partners/restaurant/${restaurantId}/orders`);
-       if (res.ok) {
-         const data = await res.json();
-         setOrders(data || []);
-         console.log(`📋 Partner fetched ${data?.length || 0} orders`);
-       }
-     } catch (e) { 
-       console.log("Failed to fetch partner orders:", e);
-       setOrders([]);
-     }
-   };
- 
-   const fetchPartnerAnalytics = async (restaurantId) => {
-     const analytics = await apiService.getPartnerAnalytics(restaurantId);
-     setDynamicStats(prev => ({
-       ...prev,
-       revenue: analytics.revenue || 0,
-       activeOrders: unifiedSafeOrders.filter(o => ['new', 'preparing'].includes(o.status)).length,
-       completedToday: unifiedSafeOrders.filter(o => o.status === 'completed').length,
-       avgRating: analytics.avgRating || 4.0
-     }));
-   };
- 
-   const createRestaurant = async () => {
-     setStatus('⏳ Registering Kitchen...');
-     try {
-       const res = await fetch(`http://127.0.0.1:8000/api/v1/partners/${partnerId}/restaurant`, {
-         method: "POST", headers: { "Content-Type": "application/json" },
-         body: JSON.stringify({
-           name: restName, description: restDesc, address: restAddr,
-           latitude: 21.1458, longitude: 79.0882, image_url: restImg
-         })
-       });
-       if (res.ok) {
-         const data = await res.json();
-         setRestaurant(data);
-         setStatus('');
-       }
-     } catch (e) { setStatus('❌ Failed to register kitchen.'); }
-   };
- 
-   const fetchMenu = async (restId) => {
-     try {
-       const res = await fetch(`http://127.0.0.1:8000/api/v1/partners/restaurant/${restId}/menu`);
-       if (res.ok) setMenuItems(await res.json());
-     } catch (e) { console.log("Failed to fetch menu"); }
-   };
- 
-   const addMenuItem = async () => {
-     if (!itemName || !itemPrice || !itemCat) return setStatus('⚠️ Please fill all required fields');
-     setStatus('⏳ Publishing to database...');
-     try {
-       const res = await fetch(`http://127.0.0.1:8000/api/v1/partners/restaurant/${restaurant.id}/menu`, {
-         method: "POST", headers: { "Content-Type": "application/json" },
-         body: JSON.stringify({
-           name: itemName, description: 'Freshly prepared.', price: parseFloat(itemPrice), category: itemCat, 
-           image_url: itemImg || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80'
-         })
-       });
-       if (res.ok) {
-         setStatus('✅ Menu synced with server!');
-         setItemName(''); setItemPrice(''); setItemCat(''); setItemImg('');
-         const fileInput = document.getElementById('dish-image-upload');
-         if (fileInput) fileInput.value = '';
-         fetchMenu(restaurant.id);
-         setTimeout(() => setStatus(''), 3000);
-       }
-     } catch (e) { setStatus('❌ Failed to add item.'); }
-   };
- 
-   if (!partnerId) {
-     return (
-       <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-[#0f172a] to-black text-white p-6 flex flex-col items-center justify-center font-sans">
-         <div className="w-full max-w-md bg-white/5 backdrop-blur-xl p-10 rounded-3xl shadow-[0_0_40px_rgba(0,0,0,0.5)] border border-white/10 text-center">
-           <button onClick={goBack} className="text-amber-400 hover:text-amber-300 font-semibold mb-6 block text-left">← Back</button>
-           <div className="text-6xl mb-4">👨‍🍳</div>
-           <h2 className="text-4xl font-extrabold mb-8 text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">Partner Hub</h2>
-           <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full p-4 bg-slate-900/50 border border-slate-700/50 rounded-2xl text-white focus:ring-2 focus:ring-amber-500 outline-none mb-6 text-center" placeholder="Restaurant Email" />
-           <button onClick={handleLogin} className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-bold py-4 rounded-2xl shadow-lg shadow-amber-500/25 transition transform hover:-translate-y-1 text-lg">Enter Dashboard</button>
-           {status && <p className="mt-4 text-amber-300">{status}</p>}
-         </div>
-       </div>
-     );
-   }
- 
-   if (!restaurant) {
-     return (
-       <div className="min-h-screen bg-[#0f172a] text-white p-6 flex flex-col items-center justify-center font-sans">
-         <div className="w-full max-w-2xl bg-slate-900/80 backdrop-blur-md p-10 rounded-3xl border border-amber-500/30 shadow-2xl">
-           <h2 className="text-3xl font-bold mb-2 text-amber-400">Register Your Kitchen</h2>
-           <p className="text-slate-400 mb-8">Set up your restaurant profile to start receiving orders.</p>
-           <div className="flex flex-col gap-5">
-             <input type="text" value={restName} onChange={e => setRestName(e.target.value)} className="w-full p-4 bg-slate-800 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition" placeholder="Restaurant Name" />
-             <input type="text" value={restDesc} onChange={e => setRestDesc(e.target.value)} className="w-full p-4 bg-slate-800 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition" placeholder="Short Description (e.g. Best Burgers in town)" />
-             <input type="text" value={restAddr} onChange={e => setRestAddr(e.target.value)} className="w-full p-4 bg-slate-800 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition" placeholder="Full Address" />
-             <input type="text" value={restImg} onChange={e => setRestImg(e.target.value)} className="w-full p-4 bg-slate-800 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition" placeholder="Header Image URL" />
-             <button onClick={createRestaurant} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold py-4 rounded-xl mt-4 transition text-lg">Launch Kitchen 🚀</button>
-           </div>
-         </div>
-       </div>
-     );
-   }
- 
-   return (
-     <div className="min-h-screen bg-[#0f172a] text-white flex font-sans overflow-hidden">
-       
-       <div className="w-64 bg-slate-900 border-r border-white/5 flex flex-col h-screen p-4 hidden md:flex">
-         <div className="mb-8 px-2 mt-4">
-           <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 truncate">{restaurant.name}</h2>
-           <p className="text-xs text-slate-500 mt-1 uppercase tracking-widest">Partner Portal</p>
-         </div>
-         
-         <div className="flex flex-col gap-2 flex-grow">
-           <button onClick={() => setActiveTab('overview')} className={`p-4 rounded-xl flex items-center gap-3 font-semibold transition ${activeTab === 'overview' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-             📊 Overview
-           </button>
-            <button onClick={() => setActiveTab('orders')} className={`p-4 rounded-xl flex justify-between items-center font-semibold transition ${activeTab === 'orders' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-              <div className="flex items-center gap-3">🧾 Live Orders</div>
-              {unifiedSafeOrders.filter(o => ['new', 'accepted'].includes(o.status)).length > 0 && (
-                <span className="bg-rose-500 text-white text-xs px-2 py-1 rounded-full animate-pulse">{unifiedSafeOrders.filter(o => ['new', 'accepted'].includes(o.status)).length} New</span>
-              )}
+  }, []);
+
+  const toggleStore = () => { setIsStoreOpen(!isStoreOpen); setStatus(!isStoreOpen ? '✅ Store ONLINE' : '🛑 Store OFFLINE'); setTimeout(() => setStatus(''), 3000); };
+
+  const handleLogin = async () => {
+    setStatus('⏳ Authenticating...');
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/v1/partners/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+      if (res.ok) {
+        const data = await res.json();
+        setPartnerId(data.partner_id);
+        if (data.restaurant) {
+          setRestaurant(data.restaurant);
+          setSettingsRestName(data.restaurant.name || '');
+          setSettingsRestDesc(data.restaurant.description || '');
+          setSettingsRestAddr(data.restaurant.address || '');
+          fetchMenu(data.restaurant.id);
+          fetchPartnerOrders(data.restaurant.id);
+          fetchPartnerAnalytics(data.restaurant.id);
+          wsRef.current = apiService.connectPartnerWS(data.partner_id,
+            (update) => {
+              if (['order_placed','order_accepted','gps_update','delivery_complete','rider_assigned','delivery_started'].includes(update.type)) {
+                fetchPartnerOrders(data.restaurant.id);
+                fetchPartnerAnalytics(data.restaurant.id);
+                if (soundEnabled && update.type === 'order_placed') { try { new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3').play(); } catch {} }
+              }
+            },
+            (s) => setWsStatus(s)
+          );
+          refreshInterval.current = setInterval(() => { fetchPartnerOrders(data.restaurant.id); fetchPartnerAnalytics(data.restaurant.id); }, 10000);
+        }
+        setStatus('');
+      } else setStatus('❌ Login failed.');
+    } catch { setStatus('❌ Server connection failed.'); }
+  };
+
+  const fetchPartnerOrders = async (restaurantId) => {
+    try {
+      const res = await fetch(`${API_BASE}/partners/restaurant/${restaurantId}/orders`);
+      if (res.ok) { const data = await res.json(); setOrders(data || []); }
+    } catch { setOrders([]); }
+  };
+
+  const fetchPartnerAnalytics = async (restaurantId) => {
+    const analytics = await apiService.getPartnerAnalytics(restaurantId);
+    // Use real weekly data from backend
+    if (analytics.weeklyRevenue && analytics.weeklyRevenue.length > 0) {
+      setWeeklyRevenue(analytics.weeklyRevenue);
+    }
+    setDynamicStats({
+      revenue: analytics.revenue || 0,
+      activeOrders: analytics.activeOrders ?? unifiedSafeOrders.filter(o => ['new','preparing'].includes(o.status)).length,
+      completedToday: analytics.completedToday || 0,
+      avgRating: analytics.avgRating || 4.0,
+    });
+  };
+
+  const createRestaurant = async () => {
+    setStatus('⏳ Registering Kitchen...');
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/v1/partners/${partnerId}/restaurant`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: restName, description: restDesc, address: restAddr, latitude: 21.1458, longitude: 79.0882, image_url: restImg }) });
+      if (res.ok) { const data = await res.json(); setRestaurant(data); setStatus(''); }
+    } catch { setStatus('❌ Failed.'); }
+  };
+
+  const fetchMenu = async (restId) => {
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/v1/partners/restaurant/${restId}/menu`);
+      if (res.ok) setMenuItems(await res.json());
+    } catch {}
+  };
+
+  const addMenuItem = async () => {
+    if (!itemName || !itemPrice || !itemCat) return setStatus('⚠️ Fill all required fields');
+    setStatus('⏳ Publishing...');
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/v1/partners/restaurant/${restaurant.id}/menu`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: itemName, description: 'Freshly prepared.', price: parseFloat(itemPrice), category: itemCat, image_url: itemImg || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80', in_stock: itemInStock }) });
+      if (res.ok) { setStatus('✅ Menu updated!'); setItemName(''); setItemPrice(''); setItemCat(''); setItemImg(''); setItemInStock(true); const fi = document.getElementById('dish-image-upload'); if (fi) fi.value = ''; fetchMenu(restaurant.id); setTimeout(() => setStatus(''), 3000); }
+    } catch { setStatus('❌ Failed.'); }
+  };
+
+  const deleteMenuItem = async (item) => {
+    // Call real DELETE API
+    const success = await apiService.deleteMenuItem(restaurant.id, item.id);
+    if (success) {
+      setMenuItems(prev => prev.filter(i => i.id !== item.id));
+      setStatus('✅ Item removed from menu');
+    } else {
+      setStatus('❌ Delete failed');
+    }
+    setDeleteTarget(null);
+    setTimeout(() => setStatus(''), 3000);
+  };
+
+  const toggleStockForItem = async (item) => {
+    const newVal = !item.is_available;
+    // Optimistic update
+    setMenuItems(prev => prev.map(i => i.id === item.id ? { ...i, is_available: newVal, in_stock: newVal } : i));
+    await apiService.updateMenuItem(restaurant.id, item.id, { is_available: newVal });
+  };
+
+  const saveRestaurantSettings = async () => {
+    setStatus('⏳ Saving...');
+    const result = await apiService.updateRestaurant(partnerId, restaurant.id, {
+      name: settingsRestName,
+      description: settingsRestDesc,
+      address: settingsRestAddr,
+    });
+    if (result) {
+      setRestaurant(prev => ({ ...prev, name: settingsRestName, description: settingsRestDesc, address: settingsRestAddr }));
+      setStatus('✅ Profile saved!');
+    } else {
+      setStatus('❌ Save failed');
+    }
+    setTimeout(() => setStatus(''), 3000);
+  };
+
+  const topItems = [...menuItems].sort((a, b) => (b.orders_count || 0) - (a.orders_count || 0)).slice(0, 5);
+
+  // ── LOGIN GATE ──
+  if (!partnerId) {
+    return (
+      <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-[#0f172a] to-black text-white flex items-center justify-center font-sans p-6">
+        <div className="w-full max-w-md bg-white/5 backdrop-blur-xl p-10 rounded-3xl shadow-2xl border border-white/10 text-center animate-fade-in-up">
+          <button onClick={goBack} className="text-amber-400 hover:text-amber-300 font-semibold mb-8 block text-left">← Back</button>
+          <div className="text-7xl mb-6">👨‍🍳</div>
+          <h2 className="text-4xl font-black mb-2 text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500">Partner Hub</h2>
+          <p className="text-slate-400 text-sm mb-8">Manage your kitchen & orders in real time</p>
+          <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full p-4 bg-slate-900/50 border border-slate-700/50 rounded-2xl text-white focus:ring-2 focus:ring-amber-500 outline-none mb-4 text-center" placeholder="Restaurant Email" />
+          <button onClick={handleLogin} className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-black py-4 rounded-2xl shadow-lg shadow-amber-500/25 transition transform hover:-translate-y-1 text-lg">
+            Enter Dashboard →
+          </button>
+          {status && <p className="mt-4 text-amber-300 text-sm animate-fade-in">{status}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  // ── REGISTER RESTAURANT ──
+  if (!restaurant) {
+    return (
+      <div className="min-h-screen bg-[#0f172a] text-white p-6 flex items-center justify-center font-sans">
+        <div className="w-full max-w-2xl bg-slate-900/80 backdrop-blur-md p-10 rounded-3xl border border-amber-500/30 shadow-2xl animate-fade-in-up">
+          <h2 className="text-3xl font-black mb-2 text-amber-400">Register Your Kitchen</h2>
+          <p className="text-slate-400 mb-8">Set up your restaurant profile to start receiving orders.</p>
+          <div className="flex flex-col gap-5">
+            {[{ v: restName, s: setRestName, p: 'Restaurant Name' }, { v: restDesc, s: setRestDesc, p: 'Short Description' }, { v: restAddr, s: setRestAddr, p: 'Full Address' }, { v: restImg, s: setRestImg, p: 'Header Image URL' }].map((f, i) => (
+              <input key={i} type="text" value={f.v} onChange={e => f.s(e.target.value)} className="w-full p-4 bg-slate-800 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition text-white" placeholder={f.p} />
+            ))}
+            <button onClick={createRestaurant} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-black py-4 rounded-xl transition text-lg">Launch Kitchen 🚀</button>
+          </div>
+          {status && <p className="mt-4 text-amber-300 text-center animate-pulse">{status}</p>}
+        </div>
+      </div>
+    );
+  }
+
+  // ── MAIN DASHBOARD ──
+  return (
+    <div className="min-h-screen bg-[#0f172a] text-white flex font-sans overflow-hidden">
+
+      {/* ── SIDEBAR ── */}
+      <div className="w-64 bg-slate-900 border-r border-white/5 flex flex-col h-screen p-4 hidden md:flex shrink-0">
+        <div className="mb-8 px-2 mt-4">
+          <p className="text-[10px] font-bold text-amber-500/70 uppercase tracking-widest mb-1">Partner Portal</p>
+          <h2 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 truncate leading-tight">{restaurant.name}</h2>
+          <p className="text-xs text-slate-500 mt-1 truncate">{restaurant.address}</p>
+        </div>
+
+        <div className="flex flex-col gap-1 flex-grow">
+          {[
+            { id: 'overview', icon: '📊', label: 'Overview' },
+            { id: 'orders',   icon: '🧾', label: 'Live Orders', badge: newOrders.length },
+            { id: 'kanban',   icon: '📋', label: 'Kanban Board' },
+            { id: 'menu',     icon: '🍲', label: 'Menu Manager' },
+            { id: 'settings', icon: '⚙️', label: 'Settings' },
+            { id: 'earnings', icon: '💰', label: 'Earnings' },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              className={`p-3.5 rounded-xl flex items-center justify-between font-semibold transition group ${activeTab === tab.id ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+              <span className="flex items-center gap-3"><span>{tab.icon}</span>{tab.label}</span>
+              {tab.badge > 0 && <span className="bg-rose-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse">{tab.badge}</span>}
             </button>
-           <button onClick={() => setActiveTab('menu')} className={`p-4 rounded-xl flex items-center gap-3 font-semibold transition ${activeTab === 'menu' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-             🍲 Menu Manager
-           </button>
-         </div>
- 
-         <div className="mt-auto border-t border-white/5 pt-4">
-            <button onClick={() => { setPartnerId(null); setRestaurant(null); }} className="w-full p-4 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition font-semibold flex items-center gap-2">
-              🚪 Log Out
+          ))}
+        </div>
+
+        <div className="mt-auto border-t border-white/5 pt-4">
+          <button onClick={() => { setPartnerId(null); setRestaurant(null); }} className="w-full p-3.5 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition font-semibold flex items-center gap-2">
+            🚪 Log Out
+          </button>
+        </div>
+      </div>
+
+      {/* ── MAIN CONTENT ── */}
+      <div className="flex-1 flex flex-col h-screen overflow-y-auto">
+
+        {/* Top Bar */}
+        <div className="sticky top-0 z-20 bg-slate-900/90 backdrop-blur-xl border-b border-white/5 px-6 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-4">
+            <h1 className="text-xl font-black capitalize hidden md:block">{activeTab === 'kanban' ? 'Kanban Board' : activeTab}</h1>
+            {status && <span className="text-sm font-bold text-amber-300 animate-pulse bg-amber-500/10 px-3 py-1 rounded-full">{status}</span>}
+            <div className={`text-xs px-3 py-1 rounded-full font-bold border ml-2 ${wsStatus === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-slate-700/30 text-slate-400 border-slate-600/30'}`}>
+              {wsStatus === 'connected' ? '🟢 Live' : '🟡 Connecting...'}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Sound toggle */}
+            <button onClick={() => setSoundEnabled(!soundEnabled)} className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg transition ${soundEnabled ? 'bg-amber-500/10 text-amber-400' : 'bg-slate-800 text-slate-500'}`}>
+              {soundEnabled ? '🔔' : '🔕'}
             </button>
-         </div>
-       </div>
- 
-       <div className="flex-1 flex flex-col h-screen overflow-y-auto relative">
-         
-         <div className="sticky top-0 z-20 bg-slate-900/80 backdrop-blur-md border-b border-white/5 p-6 flex justify-between items-center">
-           <div className="md:hidden font-bold text-amber-400 text-xl">{restaurant.name}</div>
-           <div className="flex items-center gap-4">
-             <h1 className="text-2xl font-bold hidden md:block capitalize">{activeTab}</h1>
-             {status && <span className="ml-4 text-sm font-medium text-amber-300 animate-pulse">{status}</span>}
-             {/* 🚨 NEW: WebSocket Status Indicator */}
-             <div className={`text-xs px-2 py-1 rounded-full font-bold ml-4 ${wsStatus === 'connected' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-400' : wsStatus === 'error' ? 'bg-red-500/20 text-red-400 border border-red-400' : 'bg-slate-600/20 text-slate-400 border border-slate-600'}`}>
-               {wsStatus === 'connected' ? '🟢 Live' : wsStatus === 'error' ? '🔴 Reconnecting...' : '🟡 Connecting...'}
-             </div>
-           </div>
-           
-           <div className="flex items-center gap-4">
-             <span className="text-sm text-slate-400 font-medium mr-2">Status:</span>
-             <button 
-               onClick={toggleStore} 
-               className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${isStoreOpen ? 'bg-emerald-500' : 'bg-slate-600'}`}
-             >
-               <span className={`inline-block h-6 w-6 transform rounded-full bg-white transition ${isStoreOpen ? 'translate-x-7' : 'translate-x-1'}`} />
-             </button>
-             <span className={`font-bold ${isStoreOpen ? 'text-emerald-400' : 'text-slate-500'}`}>{isStoreOpen ? 'OPEN' : 'CLOSED'}</span>
-           </div>
-         </div>
- 
-         <div className="p-8">
-           
-           {activeTab === 'overview' && (
-             <div className="animate-fade-in">
-               <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-                 <div className="bg-slate-800/50 p-6 rounded-3xl border border-white/5 shadow-lg">
-                   <p className="text-slate-400 font-medium mb-2">Today's Revenue</p>
-                   <p className="text-4xl font-black text-white">₹{dynamicStats.revenue}</p>
-                 </div>
-                 <div className="bg-slate-800/50 p-6 rounded-3xl border border-white/5 shadow-lg">
-                   <p className="text-slate-400 font-medium mb-2">Active Orders</p>
-                   <p className="text-4xl font-black text-white">{dynamicStats.activeOrders}</p>
-                 </div>
-                 <div className="bg-slate-800/50 p-6 rounded-3xl border border-white/5 shadow-lg">
-                   <p className="text-slate-400 font-medium mb-2">Completed Today</p>
-                   <p className="text-4xl font-black text-white">{dynamicStats.completedToday}</p>
-                 </div>
-                 <div className="bg-slate-800/50 p-6 rounded-3xl border border-white/5 shadow-lg">
-                   <p className="text-slate-400 font-medium mb-2">Restaurant Rating</p>
-                   <p className="text-4xl font-black text-yellow-400">⭐ {dynamicStats.avgRating}</p>
-                 </div>
-               </div>
-             </div>
-           )}
- 
-           {activeTab === 'orders' && (
-             <div className="animate-fade-in">
-               <div className="flex gap-4 mb-6 border-b border-white/10 pb-4">
-                  <button onClick={() => setOrderTab('active')} className={`px-4 py-2 rounded-lg font-bold transition ${orderTab === 'active' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-white'}`}>
-                    Active ({unifiedSafeOrders.filter(o => ['new', 'accepted', 'preparing', 'ready', 'assigned', 'in_delivery'].includes(o.status)).length})
-                  </button>
-                  <button onClick={() => setOrderTab('completed')} className={`px-4 py-2 rounded-lg font-bold transition ${orderTab === 'completed' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-white'}`}>
-                    Completed ({unifiedSafeOrders.filter(o => o.status === 'completed' || o.status === 'delivered').length})
-                  </button>
-                 <button onClick={() => setOrderTab('cancelled')} className={`px-4 py-2 rounded-lg font-bold transition ${orderTab === 'cancelled' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'text-slate-400 hover:text-white'}`}>
-                   Cancelled
-                 </button>
-               </div>
- 
-               <div className="grid gap-4">
-                  {unifiedSafeOrders.filter(o => {
-                    if (orderTab === 'active') return ['new', 'accepted', 'preparing', 'ready', 'assigned', 'in_delivery'].includes(o.status);
-                    if (orderTab === 'completed') return o.status === 'completed' || o.status === 'delivered';
-                    return o.status === 'cancelled';
-                  }).map((order) => (
-                   <div key={order.id} className="bg-slate-800/50 p-6 rounded-2xl border border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-amber-500/30 transition">
-                     <div>
-                       <div className="flex items-center gap-3 mb-2">
-                         <h3 className="text-xl font-black text-white">{order.id}</h3>
-                         <span className="text-slate-400 text-sm">• {order.time || 'Recently'}</span>
-                       </div>
-                       <p className="text-amber-400 font-medium mb-1">{order.item_description || order.items}</p>
-                       <p className="text-slate-300 font-bold">Total: {order.amount ? `₹${order.amount}` : order.total}</p>
-                     </div>
-                     
-                      <div className="flex items-center gap-3 w-full md:w-auto">
-                        {order.status === 'new' && <button onClick={() => updateOrderStatus(order.id, 'accepted')} className="flex-1 md:flex-none bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 px-6 rounded-xl transition shadow-lg shadow-emerald-500/20">Accept Order</button>}
-                        {order.status === 'accepted' && <button onClick={() => updateOrderStatus(order.id, 'preparing')} className="flex-1 md:flex-none bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-6 rounded-xl transition shadow-lg shadow-blue-500/20">Start Preparing 👨‍🍳</button>}
-                        {order.status === 'preparing' && <button onClick={() => updateOrderStatus(order.id, 'ready')} className="flex-1 md:flex-none bg-amber-600 hover:bg-amber-500 text-white font-bold py-3 px-6 rounded-xl transition shadow-lg shadow-amber-500/20">Mark Ready ✓</button>}
-                        {order.status === 'ready' && (
-                          <span className="text-emerald-400 font-bold bg-emerald-500/10 px-4 py-3 rounded-xl border border-emerald-500/20 animate-pulse">⏳ Waiting for Rider...</span>
-                        )}
-                        {order.status === 'assigned' && <span className="text-blue-400 font-bold bg-blue-500/10 px-4 py-3 rounded-xl border border-blue-500/20">🛵 Rider Picking Up</span>}
-                        {order.status === 'in_delivery' && <span className="text-purple-400 font-bold bg-purple-500/10 px-4 py-3 rounded-xl border border-purple-500/20">🚀 Out for Delivery</span>}
-                        {(order.status === 'completed' || order.status === 'delivered') && <span className="text-slate-500 font-bold px-4 py-3">✅ Delivered</span>}
+            {/* Store Open/Close toggle */}
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400 font-medium">Store:</span>
+              <button onClick={toggleStore} className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${isStoreOpen ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition ${isStoreOpen ? 'translate-x-6' : 'translate-x-1'}`} />
+              </button>
+              <span className={`font-black text-xs ${isStoreOpen ? 'text-emerald-400' : 'text-slate-500'}`}>{isStoreOpen ? 'OPEN' : 'CLOSED'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6 flex-1">
+
+          {/* ═══ OVERVIEW TAB ═══ */}
+          {activeTab === 'overview' && (
+            <div className="animate-fade-in space-y-8">
+              {/* Stat Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <StatCard label="Today's Revenue" value={`₹${dynamicStats.revenue}`} sub="From all completed orders" color="emerald" icon="💰" animate />
+                <StatCard label="Active Orders" value={dynamicStats.activeOrders} sub={`${newOrders.length} new · ${preparingOrders.length} preparing`} color="amber" icon="🔥" animate />
+                <StatCard label="Completed Today" value={dynamicStats.completedToday} sub="Successfully delivered" color="blue" icon="✅" animate />
+                <StatCard label="Avg Rating" value={`⭐ ${dynamicStats.avgRating}`} sub="Based on customer reviews" color="amber" icon="⭐" animate />
+              </div>
+
+              {/* Charts Row */}
+              <div className="grid lg:grid-cols-3 gap-6">
+                {/* Revenue Bar Chart */}
+                <div className="lg:col-span-2 bg-slate-800/40 rounded-3xl p-6 border border-white/5">
+                  <div className="flex justify-between items-center mb-6">
+                    <div>
+                      <h3 className="font-black text-white text-lg">Weekly Revenue</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Last 7 days earnings overview</p>
+                    </div>
+                    <span className="text-xs bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full font-bold">This Week</span>
+                  </div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <BarChart data={weeklyRevenue} barSize={28}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(51,65,85,0.4)" vertical={false} />
+                      <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+                      <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${v}`} width={50} />
+                      <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(245,158,11,0.05)' }} />
+                      <Bar dataKey="revenue" radius={[6,6,0,0]}
+                        fill="url(#revenueGrad)" />
+                      <defs>
+                        <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#f59e0b" stopOpacity={0.9} />
+                          <stop offset="100%" stopColor="#f59e0b" stopOpacity={0.4} />
+                        </linearGradient>
+                      </defs>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Order Status Pie */}
+                <div className="bg-slate-800/40 rounded-3xl p-6 border border-white/5">
+                  <h3 className="font-black text-white text-lg mb-1">Order Mix</h3>
+                  <p className="text-xs text-slate-400 mb-5">Current order distribution</p>
+                  {pieData.length > 0 ? (
+                    <>
+                      <ResponsiveContainer width="100%" height={150}>
+                        <PieChart>
+                          <Pie data={pieData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={4} dataKey="value">
+                            {pieData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
+                          </Pie>
+                          <Tooltip content={<PieTooltip />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="space-y-2 mt-3">
+                        {pieData.map((d, i) => (
+                          <div key={i} className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full" style={{ background: PIE_COLORS[i] }} /><span className="text-slate-400">{d.name}</span></div>
+                            <span className="font-black text-white">{d.value}</span>
+                          </div>
+                        ))}
                       </div>
-                   </div>
-                 ))}
-                 
-                  {unifiedSafeOrders.filter(o => {
-                    if (orderTab === 'active') return ['new', 'accepted', 'preparing', 'ready', 'assigned', 'in_delivery'].includes(o.status);
-                    if (orderTab === 'completed') return o.status === 'completed' || o.status === 'delivered';
-                    return o.status === 'cancelled';
-                  }).length === 0 && (
-                   <p className="text-slate-500 py-10 text-center">No orders in this category.</p>
-                 )}
-               </div>
-             </div>
-           )}
- 
-           {activeTab === 'menu' && (
-             <div className="animate-fade-in grid xl:grid-cols-3 gap-8">
-               
-               <div className="xl:col-span-1 bg-slate-800/50 p-6 rounded-3xl border border-white/5 h-fit">
-                 <h3 className="text-xl font-bold mb-6 text-white border-b border-white/10 pb-4">Add / Edit Item</h3>
-                 <div className="flex flex-col gap-4">
-                   <div>
-                     <label className="text-xs text-slate-400 font-bold mb-1 block uppercase tracking-wider">Dish Name*</label>
-                     <input type="text" value={itemName} onChange={e => setItemName(e.target.value)} className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition text-white" placeholder="e.g. Butter Chicken" />
-                   </div>
-                   <div className="flex gap-4">
-                     <div className="w-1/2">
-                       <label className="text-xs text-slate-400 font-bold mb-1 block uppercase tracking-wider">Price (₹)*</label>
-                       <input type="number" value={itemPrice} onChange={e => setItemPrice(e.target.value)} className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition text-white" placeholder="0.00" />
-                     </div>
-                     <div className="w-1/2">
-                       <label className="text-xs text-slate-400 font-bold mb-1 block uppercase tracking-wider">Category*</label>
-                       <input type="text" value={itemCat} onChange={e => setItemCat(e.target.value)} className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition text-white" placeholder="e.g. Mains" />
-                     </div>
-                   </div>
-                   
-                   <div>
-                     <label className="text-xs text-slate-400 font-bold mb-1 block uppercase tracking-wider">Dish Photo</label>
-                     <input 
-                       type="file" 
-                       id="dish-image-upload"
-                       accept="image/*" 
-                       onChange={handleImageUpload} 
-                       className="w-full p-2 bg-slate-900 border border-slate-700 rounded-xl outline-none transition text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-bold file:bg-amber-500/10 file:text-amber-400 hover:file:bg-amber-500/20 cursor-pointer" 
-                     />
-                   </div>
-                   
-                   {itemImg && itemImg.length > 500 && (
-                     <div className="text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-lg font-bold">
-                       📸 Image selected and ready for upload
-                     </div>
-                   )}
-                   
-                   <button onClick={addMenuItem} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-bold py-4 rounded-xl transition mt-2 shadow-lg shadow-amber-500/20">
-                     Publish to Menu
-                   </button>
-                 </div>
-               </div>
- 
-               <div className="xl:col-span-2 bg-slate-800/30 p-6 rounded-3xl border border-white/5">
-                 <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
-                   <h3 className="text-xl font-bold text-white">Live Menu</h3>
-                   <span className="bg-slate-800 text-amber-400 px-3 py-1 rounded-full text-sm font-bold border border-amber-500/20">{menuItems.length} Items</span>
-                 </div>
-                 
-                 <div className="grid md:grid-cols-2 gap-4">
-                   {menuItems.map((item, idx) => (
-                     <div key={idx} className="bg-slate-900/60 p-4 rounded-2xl flex items-center gap-4 border border-white/5 hover:border-amber-500/20 transition group">
-                       <img src={item.image_url} alt={item.name} className="w-20 h-20 rounded-xl object-cover shadow-md" />
-                       <div className="flex-1">
-                         <div className="flex justify-between items-start">
-                           <p className="font-bold text-white text-lg leading-tight">{item.name}</p>
-                           <button onClick={() => handleEditItem(item)} className="text-amber-500/50 hover:text-amber-400 opacity-0 group-hover:opacity-100 transition text-sm font-bold bg-amber-500/10 px-2 py-1 rounded">Edit</button>
-                         </div>
-                         <p className="text-sm text-slate-400 mt-1">{item.category}</p>
-                         <div className="flex justify-between items-center mt-2">
-                           <p className="font-black text-emerald-400">₹{item.price}</p>
-                           <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded flex items-center gap-1">
-                             <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full"></span> In Stock
-                           </span>
-                         </div>
-                       </div>
-                     </div>
-                   ))}
-                   {menuItems.length === 0 && (
-                     <div className="col-span-2 text-center py-12">
-                       <div className="text-5xl mb-4 opacity-50">🍽️</div>
-                       <p className="text-slate-400 text-lg">Your menu is empty.</p>
-                       <p className="text-slate-500 text-sm mt-1">Add items using the form to start selling.</p>
-                     </div>
-                   )}
-                 </div>
-               </div>
-             </div>
-           )}
-           
-         </div>
-       </div>
-     </div>
-   );
+                    </>
+                  ) : (
+                    <div className="h-[150px] flex items-center justify-center text-slate-500 text-sm">No order data yet</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Top Selling Items */}
+              <div className="bg-slate-800/40 rounded-3xl p-6 border border-white/5">
+                <h3 className="font-black text-white text-lg mb-5">Top Selling Items</h3>
+                {topItems.length > 0 ? (
+                  <div className="space-y-3">
+                    {topItems.map((item, i) => (
+                      <div key={item.id || i} className="flex items-center gap-4 p-3 rounded-xl hover:bg-slate-700/30 transition">
+                        <span className="text-2xl font-black text-amber-400 w-8 text-center">#{i + 1}</span>
+                        {item.image_url && <img src={item.image_url} alt={item.name} className="w-12 h-12 rounded-xl object-cover" />}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-white truncate">{item.name}</p>
+                          <p className="text-xs text-slate-400">{item.category}</p>
+                        </div>
+                        <p className="font-black text-emerald-400">₹{item.price}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-3">
+                    {menuItems.slice(0, 4).map((item, i) => (
+                      <div key={item.id || i} className="flex items-center gap-4 p-3 rounded-xl hover:bg-slate-700/30 transition">
+                        <span className="text-2xl font-black text-amber-400 w-8 text-center">#{i + 1}</span>
+                        {item.image_url && <img src={item.image_url} alt={item.name} className="w-12 h-12 rounded-xl object-cover" />}
+                        <div className="flex-1"><p className="font-bold text-white">{item.name}</p><p className="text-xs text-slate-400">{item.category}</p></div>
+                        <p className="font-black text-emerald-400">₹{item.price}</p>
+                      </div>
+                    ))}
+                    {menuItems.length === 0 && <p className="text-slate-500 text-center py-4">Add items to your menu to see top sellers</p>}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ═══ ORDERS LIST TAB ═══ */}
+          {activeTab === 'orders' && (
+            <div className="animate-fade-in">
+              <div className="flex gap-3 mb-6 border-b border-white/10 pb-4 overflow-x-auto chips-row">
+                {[
+                  { id: 'active', label: `Active (${unifiedSafeOrders.filter(o => ['new','accepted','preparing','ready','assigned','in_delivery'].includes(o.status)).length})` },
+                  { id: 'completed', label: `Completed (${completedOrders.length})` },
+                  { id: 'cancelled', label: 'Cancelled' },
+                ].map(tab => (
+                  <button key={tab.id} onClick={() => setActiveTab(`orders_${tab.id}`)}
+                    className="shrink-0 px-4 py-2 rounded-xl font-bold text-sm transition bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              <div className="grid gap-4">
+                {unifiedSafeOrders.filter(o => ['new','accepted','preparing','ready','assigned','in_delivery'].includes(o.status)).map(order => (
+                  <div key={order.id} className="bg-slate-800/50 p-5 rounded-2xl border border-white/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:border-amber-500/30 transition animate-fade-in">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`w-2 h-2 rounded-full ${order.status === 'new' ? 'bg-rose-400 animate-pulse' : order.status === 'preparing' ? 'bg-blue-400' : 'bg-emerald-400'}`} />
+                        <h3 className="font-mono text-sm text-slate-400">#{order.id?.slice(0, 8)}</h3>
+                        <span className="text-slate-500 text-xs">· {order.time || 'Recently'}</span>
+                      </div>
+                      <p className="text-amber-400 font-bold mb-1">{order.item_description || order.items}</p>
+                      <p className="text-white font-black">{order.amount ? `₹${order.amount}` : order.total}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {order.status === 'new' && <button onClick={() => updateOrderStatus(order.id, 'accepted')} className="bg-emerald-600 hover:bg-emerald-500 text-white font-black py-2.5 px-5 rounded-xl transition shadow-lg shadow-emerald-500/20">Accept ✓</button>}
+                      {order.status === 'accepted' && <button onClick={() => updateOrderStatus(order.id, 'preparing')} className="bg-blue-600 hover:bg-blue-500 text-white font-black py-2.5 px-5 rounded-xl transition">Start Preparing 👨‍🍳</button>}
+                      {order.status === 'preparing' && <button onClick={() => updateOrderStatus(order.id, 'ready')} className="bg-amber-600 hover:bg-amber-500 text-white font-black py-2.5 px-5 rounded-xl transition">Mark Ready ✓</button>}
+                      {order.status === 'ready' && <span className="text-emerald-400 font-bold bg-emerald-500/10 px-4 py-2.5 rounded-xl border border-emerald-500/20 animate-pulse">⏳ Waiting for Rider...</span>}
+                      {order.status === 'assigned' && <span className="text-blue-400 font-bold bg-blue-500/10 px-4 py-2.5 rounded-xl border border-blue-500/20">🛵 Rider Picking Up</span>}
+                      {order.status === 'in_delivery' && <span className="text-purple-400 font-bold bg-purple-500/10 px-4 py-2.5 rounded-xl border border-purple-500/20">🚀 Out for Delivery</span>}
+                    </div>
+                  </div>
+                ))}
+                {unifiedSafeOrders.filter(o => ['new','accepted','preparing','ready','assigned','in_delivery'].includes(o.status)).length === 0 && (
+                  <div className="text-center py-16">
+                    <div className="text-6xl mb-4 opacity-30">🧾</div>
+                    <p className="text-slate-400 text-lg">No active orders right now</p>
+                    <p className="text-slate-500 text-sm mt-1">New orders will appear here in real time</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ═══ KANBAN TAB ═══ */}
+          {activeTab === 'kanban' && (
+            <div className="animate-fade-in">
+              <p className="text-slate-400 text-sm mb-5">Drag orders through stages to update their status in real time.</p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {/* New */}
+                <div className="bg-rose-500/5 border border-rose-500/20 rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-rose-500/10">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-rose-500 rounded-full animate-pulse" />
+                      <h3 className="font-black text-rose-400 uppercase tracking-wide text-sm">New Orders</h3>
+                    </div>
+                    <span className="bg-rose-500/20 text-rose-400 text-xs font-black px-2 py-1 rounded-full">{newOrders.length}</span>
+                  </div>
+                  {newOrders.length === 0 ? <div className="text-center py-8 text-slate-500 text-sm">No new orders</div> : newOrders.map(o => <KanbanCard key={o.id} order={o} onAction={id => updateOrderStatus(id, 'accepted')} actionLabel="Accept ✓" actionColor="green" />)}
+                </div>
+
+                {/* Preparing */}
+                <div className="bg-blue-500/5 border border-blue-500/20 rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-blue-500/10">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-blue-400 rounded-full" />
+                      <h3 className="font-black text-blue-400 uppercase tracking-wide text-sm">Preparing</h3>
+                    </div>
+                    <span className="bg-blue-500/20 text-blue-400 text-xs font-black px-2 py-1 rounded-full">{preparingOrders.length}</span>
+                  </div>
+                  {preparingOrders.length === 0 ? <div className="text-center py-8 text-slate-500 text-sm">Nothing preparing</div> : preparingOrders.map(o => <KanbanCard key={o.id} order={o} onAction={o.status === 'accepted' ? id => updateOrderStatus(id, 'preparing') : id => updateOrderStatus(id, 'ready')} actionLabel={o.status === 'accepted' ? '👨‍🍳 Cook' : '✓ Ready'} actionColor={o.status === 'accepted' ? 'blue' : 'amber'} />)}
+                </div>
+
+                {/* Ready */}
+                <div className="bg-emerald-500/5 border border-emerald-500/20 rounded-3xl p-4">
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-emerald-500/10">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-emerald-400 rounded-full" />
+                      <h3 className="font-black text-emerald-400 uppercase tracking-wide text-sm">Ready for Pickup</h3>
+                    </div>
+                    <span className="bg-emerald-500/20 text-emerald-400 text-xs font-black px-2 py-1 rounded-full">{readyOrders.length}</span>
+                  </div>
+                  {readyOrders.length === 0 ? <div className="text-center py-8 text-slate-500 text-sm">Nothing ready yet</div> : readyOrders.map(o => <div key={o.id} className="kanban-card bg-slate-900/80 border border-white/5 rounded-2xl p-4 mb-3 border-emerald-500/20"><p className="text-xs font-mono text-slate-500">#{o.id?.slice(0,8)}</p><p className="font-bold text-white text-sm mt-1 mb-2">{o.item_description || o.items}</p><div className="flex justify-between items-center"><p className="text-emerald-400 font-black">₹{o.amount || o.total}</p><span className="text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1.5 rounded-full border border-emerald-500/20 animate-pulse font-bold">⏳ Rider Coming</span></div></div>)}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ MENU TAB ═══ */}
+          {activeTab === 'menu' && (
+            <div className="animate-fade-in">
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-black">Menu Manager</h2>
+                <button onClick={() => setMenuPreview(!menuPreview)} className={`text-sm font-bold px-4 py-2 rounded-xl transition border ${menuPreview ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' : 'bg-slate-800 text-slate-400 border-white/5 hover:text-white'}`}>
+                  {menuPreview ? '✏️ Edit Mode' : '👁️ Preview Mode'}
+                </button>
+              </div>
+
+              {menuPreview ? (
+                // Customer Preview Mode
+                <div className="max-w-md mx-auto bg-slate-900/50 rounded-3xl border border-white/5 p-4">
+                  <p className="text-center text-xs text-amber-400 font-bold uppercase tracking-widest mb-4 border border-amber-500/20 rounded-full py-1.5 bg-amber-500/5">Customer Preview</p>
+                  <div className="space-y-3">
+                    {menuItems.map(item => (
+                      <div key={item.id} className="flex gap-3 items-center p-3 bg-slate-800/60 rounded-xl border border-white/5">
+                        {item.image_url && <img src={item.image_url} alt={item.name} className="w-16 h-16 rounded-xl object-cover" />}
+                        <div className="flex-1"><p className="font-bold text-white text-sm">{item.name}</p><p className="text-xs text-slate-400">{item.category}</p><p className="text-emerald-400 font-black mt-1">₹{item.price}</p></div>
+                        <div className="bg-slate-700 rounded-xl px-4 py-2 text-emerald-400 font-black text-sm border border-emerald-500/20">ADD</div>
+                      </div>
+                    ))}
+                    {menuItems.length === 0 && <p className="text-center text-slate-500 py-8">No items yet. Add some below!</p>}
+                  </div>
+                </div>
+              ) : (
+                <div className="grid xl:grid-cols-3 gap-6">
+                  {/* Add Item Form */}
+                  <div className="xl:col-span-1 bg-slate-800/40 p-6 rounded-3xl border border-white/5 h-fit">
+                    <h3 className="text-lg font-black mb-5 text-white border-b border-white/10 pb-4">Add / Edit Item</h3>
+                    <div className="flex flex-col gap-4">
+                      <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">Dish Name *</label>
+                        <input type="text" value={itemName} onChange={e => setItemName(e.target.value)} className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition text-white" placeholder="e.g. Butter Chicken" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-xs text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">Price (₹) *</label>
+                          <input type="number" value={itemPrice} onChange={e => setItemPrice(e.target.value)} className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition text-white" placeholder="0" />
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">Category *</label>
+                          <input type="text" value={itemCat} onChange={e => setItemCat(e.target.value)} className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition text-white" placeholder="Mains" />
+                        </div>
+                      </div>
+                      {/* Stock Toggle */}
+                      <div className="flex items-center justify-between bg-slate-900/60 border border-slate-700 rounded-xl p-3">
+                        <span className="text-sm font-bold text-slate-300">In Stock</span>
+                        <button onClick={() => setItemInStock(!itemInStock)} className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors ${itemInStock ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${itemInStock ? 'translate-x-5' : 'translate-x-1'}`} />
+                        </button>
+                      </div>
+                      <div>
+                        <label className="text-xs text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">Dish Photo</label>
+                        <input type="file" id="dish-image-upload" accept="image/*" onChange={handleImageUpload} className="w-full p-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-amber-500/10 file:text-amber-400 cursor-pointer" />
+                        {itemImg && itemImg.length > 500 && <p className="text-xs text-emerald-400 bg-emerald-500/10 p-2 rounded-lg font-bold mt-2">📸 Image ready</p>}
+                      </div>
+                      <button onClick={addMenuItem} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-black py-3.5 rounded-xl transition shadow-lg shadow-amber-500/20">
+                        Publish to Menu →
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Menu Items Grid */}
+                  <div className="xl:col-span-2">
+                    <div className="flex justify-between items-center mb-5">
+                      <h3 className="text-lg font-black text-white">Live Menu</h3>
+                      <span className="bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1 rounded-full text-sm font-black">{menuItems.length} Items</span>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      {menuItems.map((item, idx) => (
+                        <div key={idx} className="bg-slate-900/60 p-4 rounded-2xl flex items-center gap-3 border border-white/5 hover:border-amber-500/20 transition group">
+                          <img src={item.image_url} alt={item.name} className="w-18 h-18 w-[72px] h-[72px] rounded-xl object-cover shadow-md shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between">
+                              <p className="font-bold text-white leading-tight truncate pr-2">{item.name}</p>
+                              <button onClick={() => setDeleteTarget(item)} className="text-rose-500/40 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition shrink-0">🗑️</button>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-0.5">{item.category}</p>
+                            <div className="flex justify-between items-center mt-2">
+                              <p className="font-black text-emerald-400">₹{item.price}</p>
+                              <button onClick={() => toggleStockForItem(item)}
+                                className={`text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 cursor-pointer transition hover:opacity-80 ${item.is_available !== false ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20' : 'text-rose-400 bg-rose-500/10 border border-rose-500/20'}`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${item.is_available !== false ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                                {item.is_available !== false ? 'In Stock ↕' : 'Out of Stock ↕'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {menuItems.length === 0 && (
+                        <div className="col-span-2 text-center py-16">
+                          <div className="text-5xl mb-4 opacity-30">🍽️</div>
+                          <p className="text-slate-400 text-lg">Your menu is empty</p>
+                          <p className="text-slate-500 text-sm mt-1">Add items using the form on the left</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ═══ SETTINGS TAB ═══ */}
+          {activeTab === 'settings' && (
+            <div className="animate-fade-in max-w-2xl space-y-6">
+              {/* Restaurant Profile */}
+              <div className="bg-slate-800/40 rounded-3xl p-6 border border-white/5">
+                <h3 className="font-black text-white text-lg mb-5">Restaurant Profile</h3>
+                <div className="space-y-4">
+                  {[{ label: 'Restaurant Name', v: settingsRestName, s: setSettingsRestName }, { label: 'Description', v: settingsRestDesc, s: setSettingsRestDesc }, { label: 'Address', v: settingsRestAddr, s: setSettingsRestAddr }].map((f, i) => (
+                    <div key={i}>
+                      <label className="text-xs text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">{f.label}</label>
+                      <input type="text" value={f.v} onChange={e => f.s(e.target.value)} className="w-full p-3.5 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-amber-500 transition" />
+                    </div>
+                  ))}
+                  {/* Cuisine Tags */}
+                  <div>
+                    <label className="text-xs text-slate-400 font-bold mb-2 block uppercase tracking-wider">Cuisine Tags</label>
+                    <div className="flex flex-wrap gap-2">
+                      {CUISINE_TAGS.map(tag => (
+                        <button key={tag} onClick={() => setSelectedTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag])}
+                          className={`text-sm px-3 py-1.5 rounded-xl font-bold transition ${selectedTags.includes(tag) ? 'bg-amber-500 text-slate-950' : 'bg-slate-800 text-slate-400 hover:text-white border border-white/5'}`}>
+                          {tag}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={saveRestaurantSettings} className="bg-amber-500 hover:bg-amber-400 text-slate-900 font-black py-3 px-6 rounded-xl transition shadow-lg shadow-amber-500/20">Save Changes →</button>
+                </div>
+              </div>
+
+              {/* Operating Hours */}
+              <div className="bg-slate-800/40 rounded-3xl p-6 border border-white/5">
+                <h3 className="font-black text-white text-lg mb-5">Operating Hours</h3>
+                <div className="space-y-3">
+                  {Object.entries(operatingHours).map(([day, config]) => (
+                    <div key={day} className="flex items-center gap-4">
+                      <div className="w-10 text-sm font-black text-slate-300">{day}</div>
+                      <button onClick={() => setOperatingHours(p => ({ ...p, [day]: { ...p[day], open: !p[day].open } }))}
+                        className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors shrink-0 ${config.open ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                        <span className={`inline-block h-4 w-4 rounded-full bg-white transition ${config.open ? 'translate-x-5' : 'translate-x-1'}`} />
+                      </button>
+                      {config.open ? (
+                        <>
+                          <input type="time" value={config.start} onChange={e => setOperatingHours(p => ({ ...p, [day]: { ...p[day], start: e.target.value } }))} className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-sm outline-none focus:border-amber-500 transition" />
+                          <span className="text-slate-500 text-sm">to</span>
+                          <input type="time" value={config.end} onChange={e => setOperatingHours(p => ({ ...p, [day]: { ...p[day], end: e.target.value } }))} className="bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 text-white text-sm outline-none focus:border-amber-500 transition" />
+                        </>
+                      ) : (
+                        <span className="text-slate-500 text-sm">Closed</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button onClick={() => setStatus('✅ Hours saved!')} className="mt-5 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm">Save Hours</button>
+              </div>
+            </div>
+          )}
+
+          {/* ═══ EARNINGS TAB ═══ */}
+          {activeTab === 'earnings' && (
+            <div className="animate-fade-in space-y-6">
+              {/* Summary Cards */}
+              <div className="grid md:grid-cols-3 gap-5">
+                <div className="bg-gradient-to-br from-amber-900/30 to-slate-900 border border-amber-500/20 rounded-3xl p-6">
+                  <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-2">This Week</p>
+                  <p className="text-4xl font-black text-white">₹{weeklyRevenue.reduce((a,b) => a + b.revenue, 0).toLocaleString()}</p>
+                  <p className="text-slate-400 text-xs mt-2">Gross earnings before tax</p>
+                </div>
+                <div className="bg-slate-800/40 rounded-3xl p-6 border border-white/5">
+                  <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">Avg Order Value</p>
+                  <p className="text-4xl font-black text-emerald-400">₹{dynamicStats.completedToday ? Math.round(dynamicStats.revenue / dynamicStats.completedToday) : '—'}</p>
+                  <p className="text-slate-500 text-xs mt-2">Per completed order</p>
+                </div>
+                <div className="bg-slate-800/40 rounded-3xl p-6 border border-white/5">
+                  <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mb-2">Platform Fee</p>
+                  <p className="text-4xl font-black text-rose-400">₹{Math.round(weeklyRevenue.reduce((a,b) => a + b.revenue, 0) * 0.15).toLocaleString()}</p>
+                  <p className="text-slate-500 text-xs mt-2">15% commission (estimated)</p>
+                </div>
+              </div>
+
+              {/* Revenue Chart */}
+              <div className="bg-slate-800/40 rounded-3xl p-6 border border-white/5">
+                <h3 className="font-black text-white text-lg mb-6">Revenue Trend</h3>
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={weeklyRevenue}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(51,65,85,0.4)" />
+                    <XAxis dataKey="day" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={v => `₹${v}`} width={55} />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Line type="monotone" dataKey="revenue" stroke="#f59e0b" strokeWidth={3} dot={{ fill: '#f59e0b', r: 5 }} activeDot={{ r: 7 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+
+      {/* Delete Confirm Modal */}
+      {deleteTarget && <DeleteModal item={deleteTarget} onConfirm={() => deleteMenuItem(deleteTarget)} onCancel={() => setDeleteTarget(null)} />}
+    </div>
+  );
 }

@@ -45,7 +45,7 @@ async def signup(request: SignupRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_user)
     
-    return UserResponse(id=new_user.id, email=new_user.email, role=new_user.role)
+    return UserResponse(id=str(new_user.id), email=str(new_user.email), role=str(new_user.role))
 
 @router.post("/login", response_model=UserResponse)
 async def login(request: LoginRequest, db: Session = Depends(get_db)):
@@ -60,4 +60,4 @@ async def login(request: LoginRequest, db: Session = Depends(get_db)):
     if user.role != request.role:
          raise HTTPException(status_code=401, detail="Invalid role for this account")
          
-    return UserResponse(id=user.id, email=user.email, role=user.role)
+    return UserResponse(id=str(user.id), email=str(user.email), role=str(user.role))

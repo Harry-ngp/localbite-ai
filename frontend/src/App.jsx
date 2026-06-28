@@ -131,6 +131,7 @@ function AuthGateway({ onLogin }) {
 function MainApp() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userId, setUserId] = useState(null);
+  const [userEmail, setUserEmail] = useState('');
   const [currentRoute, setCurrentRoute] = useState('/');
   const [globalOrders, setGlobalOrders] = useState(() => JSON.parse(localStorage.getItem('localbite_orders')) || []);
   const toast = useToast();
@@ -162,8 +163,9 @@ function MainApp() {
     });
   };
 
-  const handleLogin = (role, id) => {
+  const handleLogin = (role, id, email = '') => {
     setUserId(id);
+    setUserEmail(email);
     setIsAuthenticated(true);
     setCurrentRoute(`/${role}`);
     toast(`Successfully authenticated as ${role}!`, 'success');
@@ -178,7 +180,7 @@ function MainApp() {
 
   if (!isAuthenticated) return <AuthGateway onLogin={handleLogin} />;
 
-  if (currentRoute === '/customer') return <CustomerScreen goBack={handleLogout} addGlobalOrder={addGlobalOrder} currentCustomerId={userId} />;
+  if (currentRoute === '/customer') return <CustomerScreen goBack={handleLogout} addGlobalOrder={addGlobalOrder} currentCustomerId={userId} userEmail={userEmail} />;
   if (currentRoute === '/partner') return <PartnerScreen goBack={handleLogout} globalOrders={globalOrders} updateGlobalOrderStatus={updateGlobalOrderStatus} />;
   if (currentRoute === '/rider') return <RiderScreen goBack={handleLogout} globalOrders={globalOrders} updateGlobalOrderStatus={updateGlobalOrderStatus} />;
 

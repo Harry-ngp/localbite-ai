@@ -40,7 +40,7 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
       
       const userData = await response.json();
       toast(`Welcome back, ${userData.email}!`, 'success');
-      onLogin(activeRole, userData.id); // Pass user ID to parent
+      onLogin(activeRole, userData.id, userData.email); // Pass user ID and email to parent
     } catch (error) {
       toast(error.message, 'error');
     } finally {
@@ -118,7 +118,7 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
       
       const userData = await response.json();
       toast('Account created successfully!', 'success');
-      onLogin(activeRole, userData.id);
+      onLogin(activeRole, userData.id, userData.email);
     } catch (error) {
       toast(error.message, 'error');
     } finally {
