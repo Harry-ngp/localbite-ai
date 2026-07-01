@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from app.core.websocket import manager
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, cast
 from app.models.orders import Order
 from app.schemas.riders import RiderCreate, RiderResponse
 from app.models.riders import Rider
 from app.core.database import get_db
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter()
 
@@ -43,10 +43,10 @@ def get_rider_earnings(rider_id: str, db: Session = Depends(get_db)):
     ).all()
     
     total_trips = len(completed_orders)
-    total_earnings = sum((o.delivery_fee or 40.0) for o in completed_orders)
+    total_earnings = sum(cast(float, o.delivery_fee or 40.0) for o in completed_orders)
     
     # Build weekly earnings breakdown
-    today = datetime.utcnow().date()
+    today = datetime.now(timezone.utc).date()
     week_start = today - timedelta(days=today.weekday())
     day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     weekly = {d: 0.0 for d in day_names}
@@ -54,7 +54,7 @@ def get_rider_earnings(rider_id: str, db: Session = Depends(get_db)):
     for o in completed_orders:
         if o.created_at and o.created_at.date() >= week_start:
             day_idx = o.created_at.weekday()
-            weekly[day_names[day_idx]] += (o.delivery_fee or 40.0)
+            weekly[day_names[day_idx]] += cast(float, o.delivery_fee or 40.0)
     
     weekly_data = [{"day": d, "amount": round(weekly[d], 2)} for d in day_names]
     
@@ -66,7 +66,7 @@ def get_rider_earnings(rider_id: str, db: Session = Depends(get_db)):
             "id": o.id,
             "from": o.item_description or "Restaurant",
             "to": o.delivery_address or "Customer",
-            "amount": round((o.delivery_fee or 40.0), 2),
+            "amount": round(cast(float, o.delivery_fee or 40.0), 2),
             "time": "10 min",
             "timestamp": o.created_at.strftime("%I:%M %p") if o.created_at else "—",
             "status": "Delivered",
@@ -92,7 +92,7 @@ def get_rider_metrics(rider_id: str, db: Session = Depends(get_db)):
         ).count()
         
         # Streak: consecutive days with at least 1 delivery
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         streak = 0
         for i in range(7):
             day = today - timedelta(days=i)

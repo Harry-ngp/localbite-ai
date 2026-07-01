@@ -9,9 +9,14 @@ class MarketplaceUser(Base):
     __tablename__ = "marketplace_users"
     
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String, nullable=True) # Added for Authentication/Profile
     email = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=True) # Added for Authentication
     role = Column(String, nullable=False) # 'customer', 'rider', 'partner'
+    phone = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    bio = Column(String, nullable=True)
+    preferences = Column(String, nullable=True) # JSON string for preferences
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships
@@ -29,6 +34,8 @@ class Restaurant(Base):
     longitude = Column(Float, nullable=False)
     image_url = Column(String)
     rating = Column(Float, default=0.0)
+    contact_number = Column(String, nullable=True)
+    support_number = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     
     # Relationships

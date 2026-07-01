@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import re
-from typing import Optional
+from typing import Optional, List
 from app.core.database import get_db
 from app.models.marketplace import Restaurant, MenuItem
+from app.services.ai_service import get_dynamic_pricing, parse_vibe_intent, get_ai_pairing_suggestions
 
 router = APIRouter()
 
@@ -13,23 +14,30 @@ class VibeSearchRequest(BaseModel):
 
 @router.post("/vibe-search")
 def vibe_and_decision_search(req: VibeSearchRequest, db: Session = Depends(get_db)):
-    raw_query = req.query.lower()
+    raw_query = req.query.strip()
     
-    # 1. THE BUDGET PARSER (Regex extraction)
-    # Looks for patterns like "under 300", "below 500", "under ₹400"
-    budget_match = re.search(r'(?:under|below|budget|₹)\s*(\d+)', raw_query)
-    budget_limit = float(budget_match.group(1)) if budget_match else 1000.0 # Default high if not specified
+    # 1. USE AI TO PARSE INTENT
+    intent = parse_vibe_intent(raw_query)
+    budget_limit = intent.get("budget") or 1000.0
+    keywords = intent.get("keywords") or []
+    category_intent = intent.get("category")
+    
+    if not keywords and raw_query:
+        # fallback
+        keywords = [w for w in re.split(r'\W+', raw_query.lower()) if len(w) > 2]
     
     # 2. SCAN THE DATABASE FOR MATCHING CRAVINGS
-    # We pull all items fitting the budget limit
     all_items = db.query(MenuItem).filter(MenuItem.price <= budget_limit, MenuItem.is_available == True).all()
     
     matched_items = []
     for item in all_items:
-        # Check if item name, description or category matches any word in the user's confused query
-        words = [w for w in re.split(r'\W+', raw_query) if len(w) > 2]
-        matches = any(word in item.name.lower() or word in item.category.lower() for word in words)
-        if matches:
+        item_text = f"{item.name} {item.category or ''} {item.description or ''}".lower()
+        
+        # Check if item text matches any of the AI keywords or category
+        matches_keyword = any(k.lower() in item_text for k in keywords) if keywords else True
+        matches_category = category_intent.lower() in item_text if category_intent else True
+        
+        if (matches_keyword or matches_category) and keywords:
             matched_items.append(item)
             
     if not matched_items:
@@ -105,6 +113,73 @@ def vibe_and_decision_search(req: VibeSearchRequest, db: Session = Depends(get_d
 
     return showdown
 
+@router.get("/search")
+def unified_search(q: str, db: Session = Depends(get_db)):
+    """
+    Unified live search: returns matching restaurants AND matching menu items.
+    Searches: restaurant name, menu item name, menu item category, menu item description.
+    """
+    if not q or len(q.strip()) < 1:
+        return {"restaurants": [], "items": []}
+
+    query = q.strip().lower()
+    words = [w for w in re.split(r'\W+', query) if len(w) >= 2]
+
+    # --- Search Restaurants ---
+    all_restaurants = db.query(Restaurant).all()
+    matched_restaurants = []
+    for rest in all_restaurants:
+        name_lower = rest.name.lower()
+        desc_lower = (rest.description or '').lower()
+        if any(w in name_lower or w in desc_lower for w in words):
+            items = db.query(MenuItem).filter(
+                MenuItem.restaurant_id == rest.id, MenuItem.is_available == True
+            ).all()
+            avg_price = round(sum(float(str(i.price)) for i in items) / len(items), 0) if items else 0
+            categories = list(set(str(i.category) for i in items if i.category))
+            matched_restaurants.append({
+                "id": str(rest.id),
+                "name": rest.name,
+                "rating": rest.rating if rest.rating else 4.5,
+                "image_url": rest.image_url or "https://images.unsplash.com/photo-1550547660-d9450f859349?w=500&q=80",
+                "tags": ", ".join(categories) if categories else (rest.description or ""),
+                "delivery_time": "15–25 min" if (rest.rating or 0) >= 4.5 else "20–35 min",
+                "avg_price": avg_price,
+                "match_type": "restaurant",
+            })
+
+    # --- Search Menu Items ---
+    all_items = db.query(MenuItem).filter(MenuItem.is_available == True).all()
+    matched_items = []
+    seen_ids = set()
+    for item in all_items:
+        item_name = item.name.lower()
+        item_cat = (item.category or '').lower()
+        item_desc = (item.description or '').lower()
+        if any(w in item_name or w in item_cat or w in item_desc for w in words):
+            if str(item.id) not in seen_ids:
+                seen_ids.add(str(item.id))
+                rest = db.query(Restaurant).filter(Restaurant.id == item.restaurant_id).first()
+                matched_items.append({
+                    "item_id": str(item.id),
+                    "name": item.name,
+                    "price": float(str(item.price)),
+                    "category": item.category or "",
+                    "image_url": item.image_url or "",
+                    "restaurant_id": str(item.restaurant_id),
+                    "restaurant_name": rest.name if rest else "Unknown",
+                    "restaurant_rating": rest.rating if rest else 4.0,
+                    "match_type": "item",
+                })
+
+    return {
+        "restaurants": matched_restaurants[:8],
+        "items": matched_items[:12],
+        "total": len(matched_restaurants) + len(matched_items),
+        "query": q,
+    }
+
+
 @router.get("/restaurants")
 def get_live_restaurants(db: Session = Depends(get_db)):
     """Returns all restaurants with computed dynamic fields"""
@@ -114,7 +189,7 @@ def get_live_restaurants(db: Session = Depends(get_db)):
     for rest in restaurants:
         # Compute avg price from menu items
         items = db.query(MenuItem).filter(MenuItem.restaurant_id == rest.id, MenuItem.is_available == True).all()
-        avg_price = round(sum(float(i.price) for i in items) / len(items), 0) if items else 0
+        avg_price = round(sum(float(str(i.price)) for i in items) / len(items), 0) if items else 0
         categories = list(set(str(i.category) for i in items if i.category))
         
         # Dynamic delivery time based on rating
@@ -155,9 +230,9 @@ def rate_order(req: RatingRequest, db: Session = Depends(get_db)):
     if req.restaurant_id:
         rest = db.query(Restaurant).filter(Restaurant.id == req.restaurant_id).first()
         if rest:
-            current = rest.rating or 4.0
+            current = float(str(rest.rating)) if rest.rating is not None else 4.0
             # Simple EMA: blend new rating in
-            rest.rating = round(float(current) * 0.8 + req.rating * 0.2, 2)
+            rest.rating = round(current * 0.8 + req.rating * 0.2, 2)  # type: ignore[assignment]
             db.commit()
     print(f"⭐ Rating {req.rating}/5 received for order {req.order_id}")
     return {"status": "success", "message": "Thank you for your feedback!"}
@@ -188,5 +263,63 @@ def get_customer_order_history(customer_id: str, db: Session = Depends(get_db)):
             })
         return result
     except Exception as e:
-        print(f"❌ Order history error: {e}")
         return []
+
+class AIPricingRequest(BaseModel):
+    distance_km: float
+    time_of_day: str
+    weather: str
+    active_orders: int
+
+@router.post("/ai/pricing")
+def calculate_dynamic_pricing(req: AIPricingRequest):
+    """Calculate AI-powered dynamic delivery fee"""
+    result = get_dynamic_pricing(
+        distance_km=req.distance_km,
+        time_of_day=req.time_of_day,
+        weather=req.weather,
+        active_orders=req.active_orders
+    )
+    return result
+
+class FraudReportRequest(BaseModel):
+    report_text: str
+    customer_id: Optional[str] = None
+    order_id: Optional[str] = None
+
+@router.post("/ai/fraud-report")
+def report_fraud(req: FraudReportRequest):
+    """Analyze a customer fraud report using AI"""
+    from app.services.ai_service import analyze_fraud_report
+    
+    analysis = analyze_fraud_report(req.report_text)
+    
+    return {
+        "status": "success",
+        "message": "Fraud report received and analyzed.",
+        "analysis": analysis,
+        "report_details": {
+            "customer_id": req.customer_id,
+            "order_id": req.order_id
+        }
+    }
+
+class PairingRequest(BaseModel):
+    cart_items: List[str]
+    restaurant_id: str
+
+@router.post("/ai/pairing")
+def get_ai_pairing(req: PairingRequest, db: Session = Depends(get_db)):
+    """Get smart AI pairings for items currently in cart"""
+    items = db.query(MenuItem).filter(MenuItem.restaurant_id == req.restaurant_id, MenuItem.is_available == True).all()
+    menu_data = [
+        {
+            "name": str(item.name),
+            "description": str(item.description) if item.description else "",
+            "price": float(str(item.price))
+        }
+        for item in items
+    ]
+    
+    pairing = get_ai_pairing_suggestions(req.cart_items, menu_data)
+    return pairing

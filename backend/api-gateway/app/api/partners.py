@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.models.marketplace import MarketplaceUser, Restaurant, MenuItem
 from app.models.orders import Order
 import uuid
+from app.services.ai_service import generate_combos
 
 router = APIRouter()
 
@@ -26,6 +27,8 @@ class RestaurantUpdate(BaseModel):
     description: Optional[str] = None
     address: Optional[str] = None
     image_url: Optional[str] = None
+    contact_number: Optional[str] = None
+    support_number: Optional[str] = None
 
 class MenuItemCreate(BaseModel):
     name: str
@@ -68,6 +71,8 @@ def partner_login(req: LoginRequest, db: Session = Depends(get_db)):
             "rating": restaurant.rating,
             "latitude": restaurant.latitude,
             "longitude": restaurant.longitude,
+            "contact_number": restaurant.contact_number,
+            "support_number": restaurant.support_number,
         } if restaurant else None
     }
 
@@ -100,13 +105,15 @@ def update_restaurant(partner_id: str, restaurant_id: str, req: RestaurantUpdate
     rest = db.query(Restaurant).filter(Restaurant.id == restaurant_id).first()
     if not rest:
         raise HTTPException(status_code=404, detail="Restaurant not found")
-    if req.name is not None: rest.name = req.name
-    if req.description is not None: rest.description = req.description
-    if req.address is not None: rest.address = req.address
-    if req.image_url is not None: rest.image_url = req.image_url
+    if req.name is not None: rest.name = req.name  # type: ignore[assignment]
+    if req.description is not None: rest.description = req.description  # type: ignore[assignment]
+    if req.address is not None: rest.address = req.address  # type: ignore[assignment]
+    if req.image_url is not None: rest.image_url = req.image_url  # type: ignore[assignment]
+    if req.contact_number is not None: rest.contact_number = req.contact_number  # type: ignore[assignment]
+    if req.support_number is not None: rest.support_number = req.support_number  # type: ignore[assignment]
     db.commit()
     db.refresh(rest)
-    return {"id": str(rest.id), "name": rest.name, "description": rest.description, "address": rest.address}
+    return {"id": str(rest.id), "name": rest.name, "description": rest.description, "address": rest.address, "contact_number": rest.contact_number, "support_number": rest.support_number}
 
 @router.post("/restaurant/{restaurant_id}/menu")
 def add_menu_item(restaurant_id: str, req: MenuItemCreate, db: Session = Depends(get_db)):
@@ -155,11 +162,11 @@ def update_menu_item(restaurant_id: str, item_id: str, req: MenuItemUpdate, db: 
     item = db.query(MenuItem).filter(MenuItem.id == item_id, MenuItem.restaurant_id == restaurant_id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Menu item not found")
-    if req.name is not None: item.name = req.name
-    if req.price is not None: item.price = req.price
-    if req.category is not None: item.category = req.category
-    if req.image_url is not None: item.image_url = req.image_url
-    if req.is_available is not None: item.is_available = req.is_available
+    if req.name is not None: item.name = req.name  # type: ignore[assignment]
+    if req.price is not None: item.price = req.price  # type: ignore[assignment]
+    if req.category is not None: item.category = req.category  # type: ignore[assignment]
+    if req.image_url is not None: item.image_url = req.image_url  # type: ignore[assignment]
+    if req.is_available is not None: item.is_available = req.is_available  # type: ignore[assignment]
     db.commit()
     db.refresh(item)
     return {"id": str(item.id), "name": item.name, "is_available": item.is_available}
@@ -213,8 +220,8 @@ def get_restaurant_analytics(restaurant_id: str, db: Session = Depends(get_db)):
         total_revenue = sum(o.amount or 0 for o in completed)
         
         # Weekly revenue: group completed orders by day of week
-        from datetime import datetime, timedelta
-        today = datetime.utcnow().date()
+        from datetime import datetime, timedelta, timezone
+        today = datetime.now(timezone.utc).date()
         week_start = today - timedelta(days=today.weekday())  # Monday
         
         day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
@@ -246,3 +253,22 @@ def get_restaurant_analytics(restaurant_id: str, db: Session = Depends(get_db)):
             "activeOrders": 0, "readyOrders": 0, "avgRating": 4.0,
             "avgOrderValue": 0, "weeklyRevenue": []
         }
+
+@router.get("/restaurant/{restaurant_id}/ai-combos")
+def get_ai_combos(restaurant_id: str, db: Session = Depends(get_db)):
+    """Generate smart AI combos based on the restaurant's menu items"""
+    items = db.query(MenuItem).filter(MenuItem.restaurant_id == restaurant_id).all()
+    if not items:
+        return {"combos": [], "message": "Add some menu items first to generate combos!"}
+        
+    menu_data = [
+        {
+            "name": str(item.name),
+            "description": str(item.description) if item.description else "",
+            "price": float(str(item.price))
+        }
+        for item in items
+    ]
+    
+    combos = generate_combos(menu_data)
+    return {"combos": combos}

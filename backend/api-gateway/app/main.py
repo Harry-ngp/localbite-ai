@@ -14,20 +14,33 @@ from app.core.websocket import router as websocket_router
 from app.api.partners import router as partners_router 
 from app.api.auth import router as auth_router
 from app.api.split_bill import router as split_bill_router
+from app.api.users import router as users_router
 from app.services.monitor import monitor_stuck_orders
 import asyncio
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    asyncio.create_task(monitor_stuck_orders())
+    yield
 
 # 1. Create the app EXACTLY ONCE
 app = FastAPI(
     title="LocalBite AI API",
     description="Core logistics and routing engine for LocalBite AI",
-    version="0.1.0"
+    version="0.1.0",
+    lifespan=lifespan
 )
 
 # 2. 🚨 THE CORS UNLOCK
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -36,10 +49,6 @@ app.add_middleware(
 # 3. Initialize Database Tables
 Base.metadata.create_all(bind=engine)
 
-@app.on_event("startup")
-async def startup_event():
-    asyncio.create_task(monitor_stuck_orders())
-
 # 4. Include the routers
 app.include_router(api_router, prefix="/api/v1")
 app.include_router(websocket_router)
@@ -47,6 +56,7 @@ app.include_router(partners_router, prefix="/api/v1/partners", tags=["Partners"]
 app.include_router(customer_router, prefix="/api/v1/customer", tags=["Customer Tools"])
 app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(split_bill_router, prefix="/api/v1/split", tags=["Split Bill"])
+app.include_router(users_router, prefix="/api/v1/users", tags=["Users"])
 # ==========================================
 # 5. THE LOGIN ENDPOINT
 # ==========================================

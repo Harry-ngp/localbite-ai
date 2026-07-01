@@ -1,7 +1,7 @@
 from sqlalchemy import Column, String, Float, DateTime, ForeignKey, Integer
 from app.core.database import Base
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 class Order(Base):
     __tablename__ = "orders"
@@ -22,8 +22,8 @@ class Order(Base):
     
     # STATUS UPDATE: It will now flow: pending -> offered -> assigned -> delivered
     status = Column(String, default="pending_assignment")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     rider_id = Column(String, ForeignKey("riders.id"), nullable=True)
     restaurant_id = Column(String, nullable=True)  # NEW: Link to restaurant/partner
     customer_id = Column(String, nullable=True)  # NEW: Link to customer
