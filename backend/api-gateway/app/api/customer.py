@@ -5,7 +5,7 @@ import re
 from typing import Optional, List
 from app.core.database import get_db
 from app.models.marketplace import Restaurant, MenuItem
-from app.services.ai_service import get_dynamic_pricing, parse_vibe_intent, get_ai_pairing_suggestions
+from app.services.ai_service import get_dynamic_pricing, parse_vibe_intent, get_ai_pairing_suggestions, analyze_fraud_report, chat_with_ai
 
 router = APIRouter()
 
@@ -286,17 +286,20 @@ class FraudReportRequest(BaseModel):
     report_text: str
     customer_id: Optional[str] = None
     order_id: Optional[str] = None
+    customer_email: Optional[str] = None
 
 @router.post("/ai/fraud-report")
 def report_fraud(req: FraudReportRequest):
-    """Analyze a customer fraud report using AI"""
-    from app.services.ai_service import analyze_fraud_report
-    
-    analysis = analyze_fraud_report(req.report_text)
+    """Analyze a customer issue report using AI and auto-email owner if GENUINE"""
+    analysis = analyze_fraud_report(
+        report_text=req.report_text,
+        customer_email=req.customer_email,
+        order_id=req.order_id,
+    )
     
     return {
         "status": "success",
-        "message": "Fraud report received and analyzed.",
+        "message": "Issue report received and analyzed.",
         "analysis": analysis,
         "report_details": {
             "customer_id": req.customer_id,
@@ -323,3 +326,44 @@ def get_ai_pairing(req: PairingRequest, db: Session = Depends(get_db)):
     
     pairing = get_ai_pairing_suggestions(req.cart_items, menu_data)
     return pairing
+
+
+class ChatMessageRequest(BaseModel):
+    message: str
+    history: Optional[List[dict]] = []
+
+
+@router.post("/ai/chat")
+def ai_chat(req: ChatMessageRequest, db: Session = Depends(get_db)):
+    """Intelligent AI chat assistant — answers any customer question using Gemini with full app context."""
+    # Fetch current restaurants to give the AI live context
+    restaurants = []
+    try:
+        all_rests = db.query(Restaurant).all()
+        for rest in all_rests:
+            items = db.query(MenuItem).filter(
+                MenuItem.restaurant_id == rest.id, MenuItem.is_available == True
+            ).all()
+            avg_price = round(sum(float(str(i.price)) for i in items) / len(items), 0) if items else 0
+            categories = list(set(str(i.category) for i in items if i.category))
+            delivery_time = "15–25 min" if (rest.rating or 0) >= 4.5 else "20–35 min"
+            restaurants.append({
+                "id": str(rest.id),
+                "name": rest.name,
+                "rating": rest.rating if rest.rating else 4.5,
+                "tags": ", ".join(categories) if categories else (rest.description or ""),
+                "delivery_time": delivery_time,
+                "avg_price": avg_price,
+                "image_url": rest.image_url or "",
+                "best_dish": items[0].name if items else None,
+                "dish_price": float(str(items[0].price)) if items else None,
+            })
+    except Exception as e:
+        print(f"Error fetching restaurants for chat: {e}")
+
+    result = chat_with_ai(
+        user_message=req.message,
+        chat_history=req.history or [],
+        restaurants=restaurants if restaurants else None,
+    )
+    return result

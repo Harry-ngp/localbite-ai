@@ -3,6 +3,7 @@ import emailjs from '@emailjs/browser';
 import { useToast } from './Toast';
 
 export default function AuthForms({ activeRole, authMode, onLogin }) {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -16,6 +17,7 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
   useEffect(() => {
     setStep(1);
     setEmail('');
+    setName('');
     setPassword('');
     setConfirmPassword('');
     setOtp('');
@@ -39,8 +41,8 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
       }
       
       const userData = await response.json();
-      toast(`Welcome back, ${userData.email}!`, 'success');
-      onLogin(activeRole, userData.id, userData.email); // Pass user ID and email to parent
+      toast(`Welcome back, ${userData.name || userData.email}!`, 'success');
+      onLogin(activeRole, userData.id, userData.email, userData.name); // Pass user ID, email and name to parent
     } catch (error) {
       toast(error.message, 'error');
     } finally {
@@ -102,13 +104,16 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
     if (password.length < 6) {
       return toast('Password must be at least 6 characters', 'error');
     }
+    if (!name.trim()) {
+      return toast('Please enter your full name', 'error');
+    }
 
     setIsLoading(true);
     try {
       const response = await fetch('http://localhost:8000/api/v1/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, role: activeRole })
+        body: JSON.stringify({ name, email, password, role: activeRole })
       });
       
       if (!response.ok) {
@@ -118,7 +123,7 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
       
       const userData = await response.json();
       toast('Account created successfully!', 'success');
-      onLogin(activeRole, userData.id, userData.email);
+      onLogin(activeRole, userData.id, userData.email, userData.name);
     } catch (error) {
       toast(error.message, 'error');
     } finally {
@@ -244,6 +249,22 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
 
       {step === 3 && (
         <form onSubmit={handleCreateAccount} className="flex flex-col gap-6 animate-fade-in-up">
+          <div className="relative group">
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="John Doe"
+              className="w-full bg-slate-900/50 border border-slate-700/50 text-white rounded-xl py-4 px-5 outline-none focus:border-emerald-500/50 focus:bg-slate-800/80 transition-all shadow-inner peer placeholder-transparent"
+              required
+              disabled={isLoading}
+              id="signup-name-input"
+            />
+            <label htmlFor="signup-name-input" className="absolute left-5 -top-2.5 bg-[#0f172a] px-1 text-xs font-bold text-slate-400 uppercase tracking-wider transition-all peer-placeholder-shown:text-base peer-placeholder-shown:text-slate-500 peer-placeholder-shown:top-4 peer-focus:-top-2.5 peer-focus:text-xs peer-focus:text-emerald-400">
+              Full Name
+            </label>
+          </div>
+
           <div className="relative group">
             <input
               type="password"

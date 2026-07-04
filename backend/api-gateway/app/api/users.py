@@ -50,15 +50,15 @@ async def update_user_profile(user_id: str, profile: UserProfileUpdate, db: Sess
         raise HTTPException(status_code=404, detail="User not found")
         
     if profile.name is not None:
-        user.name = profile.name
+        setattr(user, "name", profile.name)
     if profile.phone is not None:
-        user.phone = profile.phone
+        setattr(user, "phone", profile.phone)
     if profile.address is not None:
-        user.address = profile.address
+        setattr(user, "address", profile.address)
     if profile.bio is not None:
-        user.bio = profile.bio
+        setattr(user, "bio", profile.bio)
     if profile.preferences is not None:
-        user.preferences = profile.preferences
+        setattr(user, "preferences", profile.preferences)
         
     db.commit()
     db.refresh(user)

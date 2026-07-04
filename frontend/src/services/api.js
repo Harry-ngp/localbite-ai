@@ -151,9 +151,17 @@ export const apiService = {
       };
       ws.onerror   = () => { onStatusChange?.('error'); };
       ws.onclose   = () => {
+        if (ws.__intentional_close) return;
         console.log(`🔴 ${type} WS closed`); onStatusChange?.('disconnected');
         setTimeout(() => apiService._connectWebSocket(type, id, onUpdate, onStatusChange), 5000);
       };
+      
+      const originalClose = ws.close.bind(ws);
+      ws.close = () => {
+        ws.__intentional_close = true;
+        originalClose();
+      };
+      
       return ws;
     } catch { return null; }
   },

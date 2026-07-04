@@ -144,10 +144,28 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
   const [menuPreview, setMenuPreview] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(true);
 
+  // ── Custom Promo Codes ──
+  const [promoCodes, setPromoCodes] = useState([
+    { code: 'SPICE20', discount: 20, minOrder: 200, active: true, uses: 14 },
+    { code: 'FRIDAY10', discount: 10, minOrder: 100, active: true, uses: 37 },
+  ]);
+  const [newPromoCode, setNewPromoCode] = useState('');
+  const [newPromoDiscount, setNewPromoDiscount] = useState('');
+  const [newPromoMin, setNewPromoMin] = useState('');
+
+  // ── QR Code Upload ──
+  const [partnerQRCode, setPartnerQRCode] = useState(null);
+  const handleQRUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) { const reader = new FileReader(); reader.onloadend = () => setPartnerQRCode(reader.result); reader.readAsDataURL(file); }
+  };
+
   // Settings tab state
   const [settingsRestName, setSettingsRestName] = useState('');
   const [settingsRestDesc, setSettingsRestDesc] = useState('');
   const [settingsRestAddr, setSettingsRestAddr] = useState('');
+  const [settingsRestContact, setSettingsRestContact] = useState('');
+  const [settingsRestSupport, setSettingsRestSupport] = useState('');
   const [operatingHours, setOperatingHours] = useState({
     Mon: { open: true, start: '09:00', end: '22:00' },
     Tue: { open: true, start: '09:00', end: '22:00' },
@@ -226,6 +244,8 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
           setSettingsRestName(data.restaurant.name || '');
           setSettingsRestDesc(data.restaurant.description || '');
           setSettingsRestAddr(data.restaurant.address || '');
+          setSettingsRestContact(data.restaurant.contact_number || '');
+          setSettingsRestSupport(data.restaurant.support_number || '');
           fetchMenu(data.restaurant.id);
           fetchPartnerOrders(data.restaurant.id);
           fetchPartnerAnalytics(data.restaurant.id);
@@ -317,6 +337,8 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
       name: settingsRestName,
       description: settingsRestDesc,
       address: settingsRestAddr,
+      contact_number: settingsRestContact,
+      support_number: settingsRestSupport,
     });
     if (result) {
       setRestaurant(prev => ({ ...prev, name: settingsRestName, description: settingsRestDesc, address: settingsRestAddr }));
@@ -385,6 +407,7 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
             { id: 'orders',   icon: '🧾', label: 'Live Orders', badge: newOrders.length },
             { id: 'kanban',   icon: '📋', label: 'Kanban Board' },
             { id: 'menu',     icon: '🍲', label: 'Menu Manager' },
+            { id: 'promos',   icon: '🎟️', label: 'Promos' },
             { id: 'settings', icon: '⚙️', label: 'Settings' },
             { id: 'earnings', icon: '💰', label: 'Earnings' },
           ].map(tab => (
@@ -733,6 +756,93 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
             </div>
           )}
 
+          {/* ═══ PROMOS TAB ═══ */}
+          {activeTab === 'promos' && (
+            <div className="animate-fade-in max-w-2xl space-y-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-xl font-black">Custom Promo Codes</h2>
+                  <p className="text-slate-400 text-sm mt-0.5">Create discount codes for your restaurant</p>
+                </div>
+                <span className="text-xs bg-amber-500/10 text-amber-400 border border-amber-500/20 px-3 py-1 rounded-full font-bold">{promoCodes.filter(p => p.active).length} Active</span>
+              </div>
+
+              {/* Create New Promo */}
+              <div className="bg-slate-800/40 rounded-3xl p-6 border border-amber-500/10">
+                <h3 className="font-black text-white text-base mb-4">Create New Promo</h3>
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div>
+                    <label className="text-xs text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">Code</label>
+                    <input type="text" value={newPromoCode} onChange={e => setNewPromoCode(e.target.value.toUpperCase())} placeholder="FLAT20" maxLength={12}
+                      className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-amber-500 transition font-mono text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">Discount %</label>
+                    <input type="number" value={newPromoDiscount} onChange={e => setNewPromoDiscount(e.target.value)} placeholder="15"
+                      className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-amber-500 transition text-sm" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">Min Order ₹</label>
+                    <input type="number" value={newPromoMin} onChange={e => setNewPromoMin(e.target.value)} placeholder="150"
+                      className="w-full p-3 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-amber-500 transition text-sm" />
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    if (!newPromoCode || !newPromoDiscount) return;
+                    setPromoCodes(prev => [...prev, { code: newPromoCode, discount: Number(newPromoDiscount), minOrder: Number(newPromoMin) || 0, active: true, uses: 0 }]);
+                    setNewPromoCode(''); setNewPromoDiscount(''); setNewPromoMin('');
+                    setStatus('✅ Promo code created!');
+                    setTimeout(() => setStatus(''), 3000);
+                  }}
+                  className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-black py-3 rounded-xl transition shadow-lg shadow-amber-500/20">
+                  + Create Promo Code
+                </button>
+              </div>
+
+              {/* Active Promos List */}
+              <div className="space-y-3">
+                {promoCodes.map((promo, i) => (
+                  <div key={i} className={`rounded-2xl p-5 border flex items-center justify-between gap-4 transition ${
+                    promo.active ? 'bg-slate-800/50 border-amber-500/10 hover:border-amber-500/30' : 'bg-slate-900/40 border-white/5 opacity-60'
+                  }`}>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-black text-white text-lg font-mono tracking-widest">{promo.code}</p>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                          promo.active ? 'bg-emerald-500/20 text-emerald-400' : 'bg-slate-700/50 text-slate-500'
+                        }`}>{promo.active ? 'ACTIVE' : 'INACTIVE'}</span>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-slate-400">
+                        <span className="text-amber-400 font-bold">{promo.discount}% OFF</span>
+                        {promo.minOrder > 0 && <span>Min order: ₹{promo.minOrder}</span>}
+                        <span>{promo.uses} uses</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => setPromoCodes(prev => prev.map((p, idx) => idx === i ? { ...p, active: !p.active } : p))}
+                        className={`relative inline-flex h-6 w-10 items-center rounded-full transition-colors ${promo.active ? 'bg-amber-500' : 'bg-slate-600'}`}>
+                        <span className={`inline-block h-4 w-4 rounded-full bg-white transition ${promo.active ? 'translate-x-5' : 'translate-x-1'}`} />
+                      </button>
+                      <button
+                        onClick={() => setPromoCodes(prev => prev.filter((_, idx) => idx !== i))}
+                        className="w-8 h-8 rounded-xl bg-rose-500/10 text-rose-400 hover:bg-rose-500/20 flex items-center justify-center text-sm transition">
+                        🗑️
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                {promoCodes.length === 0 && (
+                  <div className="text-center py-12">
+                    <div className="text-5xl mb-4 opacity-30">🎟️</div>
+                    <p className="text-slate-400">No promo codes yet. Create your first one above!</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* ═══ SETTINGS TAB ═══ */}
           {activeTab === 'settings' && (
             <div className="animate-fade-in max-w-2xl space-y-6">
@@ -740,7 +850,7 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
               <div className="bg-slate-800/40 rounded-3xl p-6 border border-white/5">
                 <h3 className="font-black text-white text-lg mb-5">Restaurant Profile</h3>
                 <div className="space-y-4">
-                  {[{ label: 'Restaurant Name', v: settingsRestName, s: setSettingsRestName }, { label: 'Description', v: settingsRestDesc, s: setSettingsRestDesc }, { label: 'Address', v: settingsRestAddr, s: setSettingsRestAddr }].map((f, i) => (
+                  {[{ label: 'Restaurant Name', v: settingsRestName, s: setSettingsRestName }, { label: 'Description', v: settingsRestDesc, s: setSettingsRestDesc }, { label: 'Address', v: settingsRestAddr, s: setSettingsRestAddr }, { label: 'Call Number', v: settingsRestContact, s: setSettingsRestContact }, { label: 'Support Number', v: settingsRestSupport, s: setSettingsRestSupport }].map((f, i) => (
                     <div key={i}>
                       <label className="text-xs text-slate-400 font-bold mb-1.5 block uppercase tracking-wider">{f.label}</label>
                       <input type="text" value={f.v} onChange={e => f.s(e.target.value)} className="w-full p-3.5 bg-slate-900 border border-slate-700 rounded-xl text-white outline-none focus:border-amber-500 transition" />
@@ -786,6 +896,35 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
                   ))}
                 </div>
                 <button onClick={() => setStatus('✅ Hours saved!')} className="mt-5 bg-slate-700 hover:bg-slate-600 text-white font-bold py-2.5 px-5 rounded-xl transition text-sm">Save Hours</button>
+              </div>
+
+              {/* QR Code Upload */}
+              <div className="bg-slate-800/40 rounded-3xl p-6 border border-white/5">
+                <h3 className="font-black text-white text-lg mb-2">Payment QR Code</h3>
+                <p className="text-slate-400 text-sm mb-5">Upload your UPI QR code so customers can pay directly to your account.</p>
+                <div className="flex items-start gap-5">
+                  {partnerQRCode ? (
+                    <div className="bg-white p-2 rounded-xl shrink-0">
+                      <img src={partnerQRCode} alt="Partner QR" className="w-28 h-28 object-contain" />
+                    </div>
+                  ) : (
+                    <div className="w-28 h-28 bg-slate-900 border-2 border-dashed border-slate-600 rounded-xl flex items-center justify-center text-slate-500 text-3xl shrink-0">
+                      📱
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <label className="cursor-pointer block">
+                      <input type="file" accept="image/*" onChange={handleQRUpload} className="hidden" />
+                      <div className="bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold text-sm px-5 py-3 rounded-xl transition text-center">
+                        📤 {partnerQRCode ? 'Replace QR Code' : 'Upload QR Code'}
+                      </div>
+                    </label>
+                    {partnerQRCode && (
+                      <button onClick={() => setPartnerQRCode(null)} className="mt-2 text-xs text-rose-400 hover:text-rose-300 font-bold">✕ Remove QR</button>
+                    )}
+                    <p className="text-slate-500 text-xs mt-2">PNG/JPG supported. QR will be shown to customers during UPI checkout.</p>
+                  </div>
+                </div>
               </div>
             </div>
           )}

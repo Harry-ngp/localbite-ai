@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { apiService } from '../services/api';
+import { generateAStarRoute } from '../utils/routeUtils';
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
 const bikeIcon = new L.Icon({
@@ -73,7 +74,7 @@ const HERO_SLIDES = [
 function getDiscount(idx) { const d=[null,'20% OFF','FREE DELIVERY',null,'₹30 OFF',null,'TRENDING']; return d[idx % d.length]; }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomerId: propCustomerId, userEmail }) {
+export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomerId: propCustomerId, userEmail, userName }) {
   // ── Persistent ID ──
   const [currentCustomerId] = useState(() => {
     if (propCustomerId) return propCustomerId;
@@ -114,7 +115,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
   const [isDelivered, setIsDelivered] = useState(false);
   const [currentOrderId, setCurrentOrderId] = useState(null);
   const [wsStatus, setWsStatus] = useState('disconnected');
-  const [orderFlow, setOrderFlow] = useState({ customerPlaced: true, restaurantAccepted: false, riderAssigned: false, riderName: null, restaurantName: null });
+  const [orderFlow, setOrderFlow] = useState({ customerPlaced: true, restaurantAccepted: false, riderAssigned: false, riderName: null, restaurantName: null, orderStatus: '' });
   const [etaSeconds, setEtaSeconds] = useState(900);
   const wsRef = useRef(null);
 
@@ -125,10 +126,165 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
   const [ratingFeedback, setRatingFeedback] = useState('');
   const [ratingSubmitted, setRatingSubmitted] = useState(false);
 
+  // ── Fraud/Issue Reporting ──
+  const [showFraudModal, setShowFraudModal] = useState(false);
+  const [fraudOrder, setFraudOrder] = useState(null);
+  const [fraudReport, setFraudReport] = useState('');
+  const [fraudResponse, setFraudResponse] = useState(null);
+  const [fraudLoading, setFraudLoading] = useState(false);
+
   // ── AI Search ──
   const [vibeQuery, setVibeQuery] = useState('');
   const [aiDecision, setAiDecision] = useState(null);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [searchResults, setSearchResults] = useState(null); // { restaurants, items }
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [searchHistory, setSearchHistory] = useState(() => JSON.parse(localStorage.getItem('lb_search_history') || '[]'));
+  const searchDebounceRef = useRef(null);
+  const searchInputRef = useRef(null);
+
+  // ── AI Chat Assistant ──
+  const [showAIChat, setShowAIChat] = useState(false);
+  const [chatMessages, setChatMessages] = useState([
+    { role: 'ai', text: 'Hi! 👋 I\'m your LocalBite AI assistant, powered by Gemini. Ask me anything — what to eat, how to track your order, promo codes, split bills, or just what\'s good nearby! 🍽️' }
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
+  // ── AI Mood Selector ──
+  const MOODS = [
+    { emoji: '😄', label: 'Happy',    query: 'comfort food dessert' },
+    { emoji: '😴', label: 'Lazy',     query: 'quick snacks easy food' },
+    { emoji: '🏃', label: 'Hungry AF', query: 'large portion filling meal' },
+    { emoji: '❤️',  label: 'Date Night', query: 'romantic fine dining pasta' },
+    { emoji: '👨‍👩‍👧', label: 'Family',  query: 'family meal biryani thali' },
+    { emoji: '💪', label: 'Healthy',  query: 'salad healthy low calorie' },
+    { emoji: '🎉', label: 'Party',   query: 'pizza burger snacks party' },
+    { emoji: '💸', label: 'Budget',  query: 'cheap under 100 budget' },
+  ];
+  const [showMoodPicker, setShowMoodPicker] = useState(false);
+
+  const submitFraudReport = async () => {
+    if (!fraudReport.trim()) return;
+    setFraudLoading(true);
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/v1/customer/ai/fraud-report', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          report_text: fraudReport,
+          customer_id: currentCustomerId,
+          order_id: fraudOrder?.id,
+          customer_email: userEmail || null,
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setFraudResponse(data.analysis);
+      }
+    } catch (e) {
+      console.error(e);
+      setFraudResponse({ verdict: 'GENUINE', summary: "Failed to submit report. Please try again.", next_steps: [], email_sent: false });
+    }
+    setFraudLoading(false);
+  };
+
+  // Live search function (debounced)
+  const doLiveSearch = async (q) => {
+    if (!q || q.trim().length < 2) { setSearchResults(null); setShowSearchDropdown(false); return; }
+    setSearchLoading(true);
+    try {
+      const res = await fetch(`http://127.0.0.1:8000/api/v1/customer/search?q=${encodeURIComponent(q)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setSearchResults(data);
+        setShowSearchDropdown(true);
+      }
+    } catch {}
+    setSearchLoading(false);
+  };
+
+  const handleSearchChange = (val) => {
+    setVibeQuery(val);
+    setAiDecision(null);
+    clearTimeout(searchDebounceRef.current);
+    if (!val.trim()) { setSearchResults(null); setShowSearchDropdown(false); return; }
+    searchDebounceRef.current = setTimeout(() => doLiveSearch(val), 300);
+  };
+
+  const saveToHistory = (q) => {
+    if (!q.trim()) return;
+    setSearchHistory(prev => {
+      const updated = [q, ...prev.filter(h => h !== q)].slice(0, 5);
+      localStorage.setItem('lb_search_history', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const handleSearchSubmit = async (q) => {
+    const query = (q || vibeQuery).trim();
+    if (!query) return;
+    saveToHistory(query);
+    setShowSearchDropdown(false);
+    setSearchLoading(true); setAiDecision(null);
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/v1/customer/vibe-search', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query })
+      });
+      if (res.ok) setAiDecision(await res.json());
+      else { setStatus('❌ No matching restaurants found.'); setTimeout(() => setStatus(''), 3000); }
+    } catch { setStatus('❌ AI Engine offline.'); setTimeout(() => setStatus(''), 3000); }
+    setSearchLoading(false);
+  };
+
+  // Voice search
+  const startVoiceSearch = () => {
+    if (!('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
+      setStatus('❌ Voice search not supported in this browser.'); setTimeout(() => setStatus(''), 3000); return;
+    }
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SR();
+    rec.lang = 'en-IN'; rec.interimResults = false; rec.maxAlternatives = 1;
+    rec.onresult = (e) => { const t = e.results[0][0].transcript; setVibeQuery(t); handleSearchSubmit(t); };
+    rec.onerror = () => { setStatus('❌ Could not hear clearly. Try again.'); setTimeout(() => setStatus(''), 2000); };
+    rec.start();
+  };
+
+  // AI Chat send
+  const sendChatMessage = async () => {
+    if (!chatInput.trim()) return;
+    const userMsg = chatInput.trim();
+    setChatInput('');
+    const updatedMessages = [...chatMessages, { role: 'user', text: userMsg }];
+    setChatMessages(updatedMessages);
+    setChatLoading(true);
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/v1/customer/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMsg,
+          history: updatedMessages.slice(-8).map(m => ({ role: m.role, text: m.text })),
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setChatMessages(prev => [...prev, {
+          role: 'ai',
+          text: data.reply,
+          restaurant: data.restaurant || null,
+        }]);
+      } else {
+        setChatMessages(prev => [...prev, { role: 'ai', text: 'Hmm, something went wrong. Try asking again! 😊' }]);
+      }
+    } catch {
+      setChatMessages(prev => [...prev, { role: 'ai', text: '⚠️ AI engine is offline. Make sure the backend is running!' }]);
+    }
+    setChatLoading(false);
+    setTimeout(() => chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+  };
 
   // ── Split Bill ──
   const [splitRoomMode, setSplitRoomMode] = useState(false);
@@ -143,19 +299,76 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
   const [splitOrderSnapshot, setSplitOrderSnapshot] = useState(null); // captured before placing group order
   const [isGroupOrder, setIsGroupOrder] = useState(false); // true when tracking a group order
 
+  // ── Payment Method ──
+  const [paymentMethod, setPaymentMethod] = useState('cod'); // 'cod' | 'upi'
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [upiTimer, setUpiTimer] = useState(120);
+  const upiTimerRef = useRef(null);
+
+  // ── Tip System ──
+  const [tipAmount, setTipAmount] = useState(0);
+  const [customTip, setCustomTip] = useState('');
+
+  // ── Smart Pairing ──
+  const [smartPairing, setSmartPairing] = useState(null);
+  const [smartPairingLoading, setSmartPairingLoading] = useState(false);
+
+  useEffect(() => {
+    if (cart.length === 0 || !selectedRestaurant) {
+      setSmartPairing(null);
+      return;
+    }
+    const cartItemNames = cart.map(i => i.name);
+    const timer = setTimeout(async () => {
+      setSmartPairingLoading(true);
+      try {
+        const res = await fetch('http://127.0.0.1:8000/api/v1/customer/ai/pairing', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cart_items: cartItemNames, restaurant_id: selectedRestaurant.id })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.suggestions && data.suggestions.length > 0) {
+            setSmartPairing(data);
+          } else {
+            setSmartPairing(null);
+          }
+        }
+      } catch (err) {}
+      setSmartPairingLoading(false);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [cart, selectedRestaurant]);
+
   // ── Profile Drawer ──
   const [showProfile, setShowProfile] = useState(false);
   const [savedAddresses, setSavedAddresses] = useState(() => JSON.parse(localStorage.getItem('lb_addresses') || '[]'));
+  
+  // ── Personal Details ──
+  const [profileData, setProfileData] = useState(() => JSON.parse(localStorage.getItem('lb_profile') || JSON.stringify({ name: userName || '', email: userEmail || '', phone: '', bio: '' })));
+  
   const [promoApplied, setPromoApplied] = useState(false);
   const [promoCode, setPromoCode] = useState('');
 
-  const deliveryFee = 40;
-  const gstRate = 0.05;
-  const promoDiscount = promoApplied ? Math.round(cartTotal * 0.1) : 0;
-
-  // ── Computed ──
+  // ── Computed (must be before delivery fee calc) ──
   const cartTotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
   const cartCount = cart.reduce((s, i) => s + i.quantity, 0);
+
+  // ── Dynamic Delivery Fee (AI-adjusted surge pricing) ──
+  const gstRate = 0.05;
+  const computeDeliveryFee = () => {
+    if (cartTotal >= 400) return 0; // Free delivery on large orders
+    const hour = new Date().getHours();
+    const isPeak = (hour >= 12 && hour < 14) || (hour >= 19 && hour < 21);
+    return isPeak ? 60 : 40;
+  };
+  const deliveryFee = computeDeliveryFee();
+  const isSurge = deliveryFee === 60;
+  const isFreeDelivery = cartTotal >= 400;
+  const promoDiscount = promoApplied ? Math.round(cartTotal * 0.1) : 0;
+
+  // ── Menu filters (uses cartTotal-independent state) ──
   const menuCategories = ['All', ...new Set(restaurantMenu.map(i => i.category).filter(Boolean))];
   const filteredMenu = activeMenuCat === 'All' ? restaurantMenu : restaurantMenu.filter(i => i.category === activeMenuCat);
   // Build category chips dynamically from real restaurant data
@@ -199,12 +412,19 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
   useEffect(() => {
     wsRef.current = apiService.connectCustomerWS(currentCustomerId, (data) => {
       if (data.type === 'order_accepted' || data.type === 'order_preparing') {
-        setOrderFlow(p => ({ ...p, restaurantAccepted: true, restaurantName: data.restaurant_name || 'Restaurant' }));
+        setOrderFlow(p => ({ ...p, restaurantAccepted: true, restaurantName: data.restaurant_name || 'Restaurant', orderStatus: data.type === 'order_accepted' ? 'accepted' : 'preparing' }));
         setStatus(data.type === 'order_accepted' ? `✅ Accepted by ${data.restaurant_name || 'Restaurant'}!` : '👨‍🍳 Food is being prepared!');
       }
       if (data.type === 'rider_assigned') {
-        setOrderFlow(p => ({ ...p, riderAssigned: true, riderName: data.rider_name || 'Rider' }));
-        setStatus(`🛵 ${data.rider_name || 'Rider'} is on the way!`);
+        setOrderFlow(p => ({ ...p, riderAssigned: true, riderName: data.rider_name || 'Rider', orderStatus: 'assigned' }));
+        setStatus(`🛵 ${data.rider_name || 'Rider'} is heading to the restaurant!`);
+      }
+      if (data.type === 'in_delivery') {
+        setOrderFlow(p => ({ ...p, riderAssigned: true, orderStatus: 'in_delivery' }));
+        setStatus(`🛵 Rider has picked up the order and is on the way!`);
+      }
+      if (data.type === 'gps_update') {
+        setRiderLocation([data.location.lat, data.location.lng]);
       }
       if (data.type === 'delivery_complete' || data.type === 'delivered') {
         setStatus('🎉 FOOD DELIVERED!');
@@ -216,18 +436,18 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     return () => { if (wsRef.current) wsRef.current.close(); };
   }, [currentCustomerId]);
 
-  // Rider animation
+  // Rider animation (now powered entirely by live WebSocket GPS updates)
   useEffect(() => {
     if (!orderFlow.riderAssigned || isDelivered) return;
-    setRiderLocation([12.9816, 77.5846]);
-    const path = [[12.9816, 77.5846],[12.9791, 77.5871],[12.9766, 77.5896],[12.9741, 77.5921],[12.9716, 77.5946]];
-    let step = 0;
-    const iv = setInterval(() => {
-      if (step < path.length - 1) { step++; setRiderLocation(path[step]); }
-      else clearInterval(iv);
-    }, 4000);
-    return () => clearInterval(iv);
-  }, [orderFlow.riderAssigned, isDelivered]);
+    
+    // Set initial position based on status before GPS updates arrive
+    if (!riderLocation) {
+      const isHeadingToCustomer = orderFlow.orderStatus === 'in_delivery';
+      const startLat = isHeadingToCustomer ? 12.9816 : 12.9916;
+      const startLng = isHeadingToCustomer ? 77.5846 : 77.5746;
+      setRiderLocation([startLat, startLng]);
+    }
+  }, [orderFlow.riderAssigned, orderFlow.orderStatus, isDelivered, riderLocation]);
 
   // ETA countdown
   useEffect(() => {
@@ -246,17 +466,8 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
   };
 
   const handleVibeSearch = async (e) => {
-    if (e.key !== 'Enter' || !vibeQuery.trim()) return;
-    setSearchLoading(true); setAiDecision(null);
-    try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/customer/vibe-search', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: vibeQuery })
-      });
-      if (res.ok) setAiDecision(await res.json());
-      else { setStatus('❌ No matching restaurants found.'); setTimeout(() => setStatus(''), 3000); }
-    } catch { setStatus('❌ AI Engine offline.'); setTimeout(() => setStatus(''), 3000); }
-    setSearchLoading(false);
+    if (e.key !== 'Enter') return;
+    handleSearchSubmit();
   };
 
   const openMenu = async (restaurant) => {
@@ -332,17 +543,20 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
   const startTracking = (orderId, restaurantId) => {
     setIsTracking(true); setIsDelivered(false); setCurrentOrderId(orderId); setEtaSeconds(900);
     setStatus('✅ Order Placed! Waiting for kitchen...');
-    setOrderFlow({ customerPlaced: true, restaurantAccepted: false, riderAssigned: false, riderName: null, restaurantName: null, restaurantId });
+    setOrderFlow({ customerPlaced: true, restaurantAccepted: false, riderAssigned: false, riderName: null, restaurantName: null, restaurantId, orderStatus: 'new' });
     const pollInterval = setInterval(async () => {
       const orderData = await apiService.getOrderStatus(orderId);
       if (!orderData) return;
+      
+      setOrderFlow(p => ({ ...p, orderStatus: orderData.status }));
+
       if (orderData.status === 'accepted' || orderData.status === 'preparing') {
         setOrderFlow(p => ({ ...p, restaurantAccepted: true }));
         setStatus(orderData.status === 'preparing' ? '👨‍🍳 Food is being prepared!' : '✅ Restaurant accepted!');
       }
       if (orderData.status === 'assigned' || orderData.status === 'in_delivery') {
         setOrderFlow(p => ({ ...p, restaurantAccepted: true, riderAssigned: true, riderName: orderData.rider_id ? `Rider ${orderData.rider_id.substring(0, 6)}` : 'Rider' }));
-        setStatus('🛵 Rider is on the way!');
+        setStatus(orderData.status === 'in_delivery' ? '🛵 Rider is on the way to you!' : '🛵 Rider is heading to the restaurant!');
       }
       if (orderData.status === 'delivered') {
         setStatus('🎉 FOOD DELIVERED!'); setIsDelivered(true); clearInterval(pollInterval);
@@ -707,8 +921,14 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
                   <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; Carto' />
                   <Marker position={[12.9716, 77.5946]} icon={new L.Icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/1008/1008064.png', iconSize: [30, 30] })} />
                   <Marker position={[12.9816, 77.5846]} icon={new L.Icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3170/3170733.png', iconSize: [30, 30] })} />
-                  <Polyline positions={[[12.9816, 77.5846],[12.9766, 77.5896],[12.9716, 77.5946]]} color="#34d399" weight={4} dashArray="10,10" />
-                  <Marker position={riderLocation || [12.9816, 77.5846]} icon={bikeIcon} />
+                  
+                  {orderFlow.orderStatus === 'in_delivery' ? (
+                     <Polyline positions={[[12.9816, 77.5846],[12.9766, 77.5896],[12.9716, 77.5946]]} color="#34d399" weight={4} dashArray="10,10" />
+                  ) : (
+                     <Polyline positions={[[12.9916, 77.5746],[12.9866, 77.5796],[12.9816, 77.5846]]} color="#f59e0b" weight={4} dashArray="10,10" />
+                  )}
+                  
+                  <Marker position={riderLocation || (orderFlow.orderStatus === 'in_delivery' ? [12.9816, 77.5846] : [12.9916, 77.5746])} icon={bikeIcon} />
                 </MapContainer>
               ) : (
                 <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900/50">
@@ -750,10 +970,34 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
                       </button>
                     ))}
                   </div>
-                  <textarea value={ratingFeedback} onChange={e => setRatingFeedback(e.target.value)} placeholder="Tell us more... (optional)" rows={3}
+                  <textarea value={ratingFeedback} onChange={e => setRatingFeedback(e.target.value)} placeholder="Tell us more... (optional)" rows={2}
                     className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white text-sm outline-none focus:border-emerald-500 transition resize-none mb-4" />
+                  {/* Tip the Rider */}
+                  <div className="mb-5">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-3">🤝 Tip Your Rider (optional)</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {[0, 10, 20, 50].map(t => (
+                        <button key={t} onClick={() => { setTipAmount(t); setCustomTip(''); }}
+                          className={`px-4 py-2 rounded-xl font-black text-sm transition border ${
+                            tipAmount === t && !customTip
+                              ? 'bg-rose-500 text-white border-rose-500 shadow-lg shadow-rose-500/20'
+                              : 'bg-slate-800 text-slate-300 border-white/5 hover:border-rose-500/40'
+                          }`}>
+                          {t === 0 ? 'No Tip' : `₹${t}`}
+                        </button>
+                      ))}
+                      <input
+                        type="number" placeholder="Custom" value={customTip}
+                        onChange={e => { setCustomTip(e.target.value); setTipAmount(0); }}
+                        className="w-20 px-3 py-2 rounded-xl bg-slate-800 border border-white/5 focus:border-rose-500 text-white text-sm outline-none font-bold transition"
+                      />
+                    </div>
+                    {(tipAmount > 0 || Number(customTip) > 0) && (
+                      <p className="text-xs text-rose-400 font-bold mt-2">❤️ Your rider will receive ₹{customTip || tipAmount} extra!</p>
+                    )}
+                  </div>
                   <div className="flex gap-3">
-                    <button onClick={() => { setShowRatingModal(false); setIsTracking(false); }} className="flex-1 py-3 rounded-xl bg-slate-800 text-slate-400 font-bold hover:bg-slate-700 transition">Skip</button>
+                    <button onClick={() => { setShowRatingModal(false); setIsTracking(false); setIsGroupOrder(false); }} className="flex-1 py-3 rounded-xl bg-slate-800 text-slate-400 font-bold hover:bg-slate-700 transition">Skip</button>
                     <button onClick={submitRating} disabled={!rating}
                       className="flex-2 flex-1 py-3 rounded-xl bg-emerald-500 text-slate-950 font-black hover:bg-emerald-400 transition disabled:opacity-40">Submit ★</button>
                   </div>
@@ -762,7 +1006,12 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
                 <div className="text-center py-8 animate-bounce-in">
                   <div className="text-5xl mb-3">🙏</div>
                   <h3 className="text-xl font-black text-white">Thanks for rating!</h3>
-                  <p className="text-slate-400 text-sm mt-1">Redirecting to home...</p>
+                  {(tipAmount > 0 || Number(customTip) > 0) && (
+                    <div className="mt-3 bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
+                      <p className="text-rose-400 font-bold text-sm">❤️ ₹{customTip || tipAmount} tip sent to your rider!</p>
+                    </div>
+                  )}
+                  <p className="text-slate-400 text-sm mt-3">Redirecting to home...</p>
                 </div>
               )}
             </div>
@@ -889,14 +1138,14 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
         {showCartDrawer && (
           <div className="fixed inset-0 z-[100] flex items-end">
             <div className="absolute inset-0 bg-black/60 drawer-overlay" onClick={() => setShowCartDrawer(false)} />
-            <div className="relative w-full bg-slate-900 rounded-t-3xl border-t border-white/10 p-6 animate-drawer-open max-h-[85vh] overflow-y-auto">
+            <div className="relative w-full bg-slate-900 rounded-t-3xl border-t border-white/10 p-6 animate-drawer-open max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-black text-white">Your Cart</h3>
                 <button onClick={() => setShowCartDrawer(false)} className="text-slate-400 hover:text-white w-8 h-8 flex items-center justify-center">✕</button>
               </div>
 
               {/* Cart Items */}
-              <div className="space-y-3 mb-6">
+              <div className="space-y-3 mb-5">
                 {cart.map(item => (
                   <div key={item.id} className="flex items-center gap-3 bg-slate-800/50 p-3 rounded-xl border border-white/5">
                     {item.image_url && <img src={item.image_url} alt={item.name} className="w-14 h-14 rounded-lg object-cover" />}
@@ -913,8 +1162,35 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
                 ))}
               </div>
 
+              {/* 🤖 Smart Pairing Suggestions */}
+              {smartPairingLoading ? (
+                <div className="mb-5 flex justify-center py-4">
+                  <div className="flex items-center gap-2 text-violet-400">
+                    <div className="w-4 h-4 border-2 border-violet-500/30 border-t-violet-400 rounded-full animate-spin"></div>
+                    <span className="text-xs font-bold">AI is finding perfect pairings...</span>
+                  </div>
+                </div>
+              ) : smartPairing ? (
+                <div className="mb-5 bg-gradient-to-br from-violet-900/30 to-slate-900/50 border border-violet-500/20 rounded-2xl p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-lg">🤖</span>
+                    <p className="text-xs font-black text-violet-400 uppercase tracking-widest">AI Perfect Pairing</p>
+                  </div>
+                  <p className="text-slate-300 text-xs mb-3">You have <span className="text-white font-bold">{smartPairing.item}</span> — these go great with it:</p>
+                  <div className="flex gap-2 flex-wrap">
+                    {smartPairing.suggestions.map((s, i) => (
+                      <button key={i}
+                        onClick={() => addToCart({ id: `ai-pair-${s.name.toLowerCase().replace(/\s/g, '-')}`, name: s.name, price: s.price, quantity: 0 })}
+                        className="flex items-center gap-1.5 bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/30 text-violet-300 px-3 py-2 rounded-xl text-xs font-bold transition hover:scale-105">
+                        <span>{s.emoji}</span> {s.name} <span className="text-violet-400 font-black">+₹{s.price}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               {/* Promo Code */}
-              <div className="flex gap-2 mb-5">
+              <div className="flex gap-2 mb-4">
                 <input value={promoCode} onChange={e => setPromoCode(e.target.value.toUpperCase())} placeholder="LOCALBITE10" disabled={promoApplied}
                   className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-emerald-500 transition font-mono tracking-widest" />
                 <button onClick={applyPromo} disabled={promoApplied}
@@ -924,11 +1200,22 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
               </div>
 
               {/* Bill Summary */}
-              <div className="bg-slate-800/50 rounded-2xl p-4 mb-5 border border-white/5 space-y-2">
+              <div className="bg-slate-800/50 rounded-2xl p-4 mb-4 border border-white/5 space-y-2">
                 <div className="flex justify-between text-sm text-slate-400"><span>Subtotal</span><span>₹{cartTotal}</span></div>
-                <div className="flex justify-between text-sm text-slate-400"><span>Delivery Fee</span><span>₹{deliveryFee}</span></div>
+                <div className="flex justify-between text-sm items-center">
+                  <span className="text-slate-400 flex items-center gap-1">
+                    Delivery Fee
+                    {isSurge && <span className="text-[9px] bg-rose-500/20 text-rose-400 border border-rose-500/30 px-1.5 py-0.5 rounded-full font-black ml-1">🔥 SURGE</span>}
+                    {isFreeDelivery && <span className="text-[9px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-1.5 py-0.5 rounded-full font-black ml-1">🎉 FREE</span>}
+                  </span>
+                  <span className={`font-bold ${isFreeDelivery ? 'text-emerald-400 line-through' : isSurge ? 'text-rose-400' : 'text-slate-400'}`}>
+                    {isFreeDelivery ? '₹0' : `₹${deliveryFee}`}
+                  </span>
+                </div>
                 <div className="flex justify-between text-sm text-slate-400"><span>GST (5%)</span><span>₹{(cartTotal * gstRate).toFixed(0)}</span></div>
                 {promoApplied && <div className="flex justify-between text-sm text-emerald-400"><span>🎉 Promo (LOCALBITE10)</span><span>−₹{promoDiscount}</span></div>}
+                {isSurge && <p className="text-[10px] text-rose-400/70 font-bold">🤖 AI-adjusted fee: Peak hours demand surge active</p>}
+                {isFreeDelivery && <p className="text-[10px] text-emerald-400/70 font-bold">🎉 Free delivery unlocked on orders ₹400+</p>}
                 <div className="border-t border-white/10 pt-2 flex justify-between font-black text-xl text-white">
                   <span>Grand Total</span>
                   <span>₹{Math.max(0, cartTotal + deliveryFee + Math.round(cartTotal * gstRate) - promoDiscount)}</span>
@@ -936,7 +1223,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
               </div>
 
               {/* Address */}
-              <div className="mb-5">
+              <div className="mb-4">
                 <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Delivering to</p>
                 <div className="flex items-center gap-2 bg-slate-800/50 border border-white/5 p-3 rounded-xl">
                   <span className="text-lg">📍</span>
@@ -944,9 +1231,99 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
                 </div>
               </div>
 
-              <button onClick={checkoutCart} className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 rounded-2xl shadow-lg shadow-emerald-500/20 transition transform hover:scale-[1.01] text-lg">
-                Place Order · ₹{Math.max(0, cartTotal + deliveryFee + Math.round(cartTotal * gstRate) - promoDiscount)} →
+              {/* Payment Method Selector */}
+              <div className="mb-5">
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Payment Method</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button onClick={() => setPaymentMethod('cod')}
+                    className={`flex items-center gap-2 p-3 rounded-xl border font-bold text-sm transition ${
+                      paymentMethod === 'cod'
+                        ? 'bg-amber-500/10 border-amber-500/40 text-amber-400'
+                        : 'bg-slate-800 border-white/5 text-slate-400 hover:border-white/20'
+                    }`}>
+                    <span className="text-xl">💵</span>
+                    <div className="text-left">
+                      <p className="font-black text-xs">Cash on Delivery</p>
+                      <p className="text-[10px] opacity-70">Pay when delivered</p>
+                    </div>
+                  </button>
+                  <button onClick={() => setPaymentMethod('upi')}
+                    className={`flex items-center gap-2 p-3 rounded-xl border font-bold text-sm transition ${
+                      paymentMethod === 'upi'
+                        ? 'bg-violet-500/10 border-violet-500/40 text-violet-400'
+                        : 'bg-slate-800 border-white/5 text-slate-400 hover:border-white/20'
+                    }`}>
+                    <span className="text-xl">📱</span>
+                    <div className="text-left">
+                      <p className="font-black text-xs">UPI / QR Code</p>
+                      <p className="text-[10px] opacity-70">Pay now instantly</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              <button
+                onClick={() => {
+                  if (paymentMethod === 'upi') {
+                    setShowPaymentModal(true);
+                    setUpiTimer(120);
+                    clearInterval(upiTimerRef.current);
+                    upiTimerRef.current = setInterval(() => setUpiTimer(t => { if (t <= 1) { clearInterval(upiTimerRef.current); return 0; } return t - 1; }), 1000);
+                  } else {
+                    checkoutCart();
+                  }
+                }}
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black py-4 rounded-2xl shadow-lg shadow-emerald-500/20 transition transform hover:scale-[1.01] text-lg">
+                {paymentMethod === 'upi' ? '📱 Pay via UPI →' : '💵 Place Order (COD)'} · ₹{Math.max(0, cartTotal + deliveryFee + Math.round(cartTotal * gstRate) - promoDiscount)}
               </button>
+            </div>
+          </div>
+        )}
+
+        {/* UPI Payment Modal */}
+        {showPaymentModal && (
+          <div className="fixed inset-0 z-[150] bg-black/80 flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-violet-500/30 rounded-3xl p-7 w-full max-w-sm animate-bounce-in">
+              <div className="text-center mb-5">
+                <p className="text-xs font-black text-violet-400 uppercase tracking-widest mb-1">UPI / QR Payment</p>
+                <h3 className="text-2xl font-black text-white">₹{Math.max(0, cartTotal + deliveryFee + Math.round(cartTotal * gstRate) - promoDiscount)}</h3>
+                <p className="text-slate-400 text-xs mt-1">Scan the QR code with any UPI app</p>
+              </div>
+              {/* Mock QR Code */}
+              <div className="bg-white p-3 rounded-2xl mb-4 mx-auto w-44 h-44 flex items-center justify-center">
+                <svg viewBox="0 0 100 100" className="w-full h-full">
+                  {/* QR code mock pattern */}
+                  {[0,10,20,30,40,50,60,70,80,90].map(x =>
+                    [0,10,20,30,40,50,60,70,80,90].map(y => {
+                      const hash = ((x * 13 + y * 7 + x * y) % 3);
+                      return hash === 0 ? <rect key={`${x}-${y}`} x={x} y={y} width="9" height="9" fill="black" rx="1" /> : null;
+                    })
+                  )}
+                  {/* Corner squares */}
+                  <rect x="0" y="0" width="30" height="30" fill="none" stroke="black" strokeWidth="3" rx="2" />
+                  <rect x="5" y="5" width="20" height="20" fill="black" rx="1" />
+                  <rect x="70" y="0" width="30" height="30" fill="none" stroke="black" strokeWidth="3" rx="2" />
+                  <rect x="75" y="5" width="20" height="20" fill="black" rx="1" />
+                  <rect x="0" y="70" width="30" height="30" fill="none" stroke="black" strokeWidth="3" rx="2" />
+                  <rect x="5" y="75" width="20" height="20" fill="black" rx="1" />
+                </svg>
+              </div>
+              <p className="text-center text-xs text-slate-400 mb-1">UPI ID: <span className="text-violet-400 font-black">localbite@upi</span></p>
+              {/* Countdown */}
+              <div className="flex items-center justify-center gap-2 mb-5">
+                <div className={`w-2 h-2 rounded-full ${upiTimer > 0 ? 'bg-violet-400 animate-pulse' : 'bg-red-500'}`} />
+                <p className={`text-xs font-bold ${upiTimer > 30 ? 'text-slate-400' : 'text-rose-400'}`}>
+                  {upiTimer > 0 ? `QR expires in ${Math.floor(upiTimer/60)}:${String(upiTimer%60).padStart(2,'0')}` : 'QR expired — please refresh'}
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => { clearInterval(upiTimerRef.current); setShowPaymentModal(false); }} className="flex-1 py-3 rounded-xl bg-slate-800 text-slate-400 font-bold hover:bg-slate-700 transition">Cancel</button>
+                <button
+                  onClick={() => { clearInterval(upiTimerRef.current); setShowPaymentModal(false); setShowCartDrawer(false); checkoutCart(); }}
+                  className="flex-1 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white font-black transition shadow-lg shadow-violet-500/20">
+                  ✅ I've Paid
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -1249,12 +1626,130 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
           </div>
 
           {/* AI Search Bar */}
-          <div className="relative mb-3">
-            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">{searchLoading ? '⏳' : '🔍'}</span>
-            <input type="text" value={vibeQuery} onChange={e => setVibeQuery(e.target.value)} onKeyDown={handleVibeSearch}
-              placeholder="Try 'spicy biryani under ₹200'..."
-              className="w-full bg-slate-800/80 text-white rounded-2xl py-3 pl-12 pr-4 outline-none focus:ring-1 focus:ring-emerald-500 border border-white/5 text-sm" />
-            {aiDecision && <button onClick={() => setAiDecision(null)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-xs font-bold">✕ Clear</button>}
+          <div className="relative mb-2">
+            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-base">
+              {searchLoading ? <span className="animate-spin inline-block">⏳</span> : '🔍'}
+            </span>
+            <input
+              ref={searchInputRef}
+              type="text" value={vibeQuery}
+              onChange={e => handleSearchChange(e.target.value)}
+              onKeyDown={handleVibeSearch}
+              onFocus={() => { if (vibeQuery.length >= 2) setShowSearchDropdown(true); }}
+              onBlur={() => setTimeout(() => setShowSearchDropdown(false), 200)}
+              placeholder="Search dishes, restaurants, cuisines..."
+              className="w-full bg-slate-800 text-white rounded-2xl py-3 pl-11 pr-20 outline-none focus:ring-2 focus:ring-emerald-500/60 border border-white/8 text-sm transition-all placeholder:text-slate-500 shadow-inner"
+            />
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+              {vibeQuery && (
+                <button onClick={() => { setVibeQuery(''); setSearchResults(null); setShowSearchDropdown(false); setAiDecision(null); }}
+                  className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-600 transition text-xs">
+                  ✕
+                </button>
+              )}
+              <button onClick={startVoiceSearch}
+                className="w-8 h-8 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400 hover:bg-emerald-500/20 transition text-base">
+                🎤
+              </button>
+            </div>
+
+            {/* Live Search Dropdown */}
+            {showSearchDropdown && searchResults && (
+              <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-slate-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-96 overflow-y-auto">
+                {/* Restaurants section */}
+                {searchResults.restaurants?.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-4 pt-3 pb-1">🏪 Restaurants</p>
+                    {searchResults.restaurants.map((r, i) => (
+                      <button key={i} onMouseDown={() => { setShowSearchDropdown(false); openMenu(r); saveToHistory(vibeQuery); }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-800 transition text-left">
+                        <img src={r.image_url} alt={r.name} className="w-9 h-9 rounded-xl object-cover shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-white text-sm truncate">{r.name}</p>
+                          <p className="text-slate-500 text-xs">{r.delivery_time} · ⭐ {r.rating}</p>
+                        </div>
+                        <span className="text-emerald-400 font-black text-xs shrink-0">₹{r.avg_price}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Menu Items section */}
+                {searchResults.items?.length > 0 && (
+                  <div>
+                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest px-4 pt-3 pb-1">🍽️ Dishes</p>
+                    {searchResults.items.map((item, i) => (
+                      <button key={i} onMouseDown={() => {
+                        setShowSearchDropdown(false);
+                        const rest = restaurants.find(r => r.id === item.restaurant_id);
+                        if (rest) openMenu(rest);
+                        saveToHistory(vibeQuery);
+                      }}
+                        className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-800 transition text-left">
+                        {item.image_url ? (
+                          <img src={item.image_url} alt={item.name} className="w-9 h-9 rounded-xl object-cover shrink-0" />
+                        ) : (
+                          <div className="w-9 h-9 rounded-xl bg-slate-800 flex items-center justify-center text-xl shrink-0">🍽️</div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="font-bold text-white text-sm truncate">{item.name}</p>
+                          <p className="text-slate-500 text-xs">{item.restaurant_name} · ⭐ {item.restaurant_rating?.toFixed(1)}</p>
+                        </div>
+                        <span className="text-emerald-400 font-black text-xs shrink-0">₹{item.price}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {searchResults.total === 0 && (
+                  <div className="text-center py-8">
+                    <p className="text-slate-400 text-sm">No results for "{vibeQuery}"</p>
+                    <p className="text-slate-500 text-xs mt-1">Try "biryani", "pizza", or press Enter for AI search</p>
+                  </div>
+                )}
+                {/* AI search trigger at bottom */}
+                <button onMouseDown={() => { setShowSearchDropdown(false); handleSearchSubmit(); }}
+                  className="w-full flex items-center gap-2 px-4 py-3 border-t border-white/5 text-violet-400 hover:bg-violet-500/5 transition text-sm font-bold">
+                  <span>🤖</span> Ask AI: "{vibeQuery}"
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Search History Chips */}
+          {!vibeQuery && searchHistory.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-1 mb-1" style={{ scrollbarWidth: 'none' }}>
+              {searchHistory.map((h, i) => (
+                <button key={i} onClick={() => { setVibeQuery(h); handleSearchSubmit(h); }}
+                  className="shrink-0 flex items-center gap-1 bg-slate-800/70 text-slate-400 text-xs font-bold px-3 py-1.5 rounded-full border border-white/5 hover:border-emerald-500/30 hover:text-emerald-400 transition">
+                  <span className="opacity-50">🕑</span> {h}
+                </button>
+              ))}
+              <button onClick={() => { setSearchHistory([]); localStorage.removeItem('lb_search_history'); }}
+                className="shrink-0 text-[10px] text-slate-600 hover:text-slate-400 px-2 py-1 transition">
+                Clear
+              </button>
+            </div>
+          )}
+
+          {/* AI Mood Selector Toggle */}
+          <div className="flex items-center gap-2 mb-2">
+            <button onClick={() => setShowMoodPicker(v => !v)}
+              className={`flex items-center gap-1.5 text-xs font-black px-3 py-1.5 rounded-full border transition shrink-0 ${
+                showMoodPicker ? 'bg-violet-500/20 text-violet-400 border-violet-500/40' : 'bg-slate-800 text-slate-400 border-white/5 hover:border-violet-500/30'
+              }`}>
+              🧠 Pick your Mood
+            </button>
+            {showMoodPicker && (
+              <div className="flex gap-1.5 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                {MOODS.map((m, i) => (
+                  <button key={i}
+                    onClick={() => { setVibeQuery(m.label); handleSearchSubmit(m.query); setShowMoodPicker(false); }}
+                    className="shrink-0 flex flex-col items-center gap-0.5 bg-slate-800/80 hover:bg-violet-500/10 border border-white/5 hover:border-violet-500/30 px-2.5 py-1.5 rounded-xl transition">
+                    <span className="text-lg">{m.emoji}</span>
+                    <span className="text-[9px] text-slate-400 font-bold">{m.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Category Chips */}
@@ -1385,9 +1880,14 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
                       <p className="text-sm text-slate-300 mb-2">{Array.isArray(order.items) ? order.items.map(i => `${i.quantity}x ${i.name}`).join(', ') : order.items}</p>
                       <div className="flex justify-between items-center">
                         <p className="text-emerald-400 font-black">₹{order.total}</p>
-                        <button onClick={() => { openMenu(order.restaurant); }} className="text-xs bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-1.5 rounded-lg transition">
-                          🔄 Reorder
-                        </button>
+                        <div className="flex gap-2">
+                          <button onClick={() => { setFraudOrder(order); setShowFraudModal(true); setFraudReport(''); setFraudResponse(null); }} className="text-xs bg-rose-500/10 text-rose-500 hover:bg-rose-500/20 font-bold px-3 py-1.5 rounded-lg transition border border-rose-500/20">
+                            ⚠️ Report Issue
+                          </button>
+                          <button onClick={() => { openMenu(order.restaurant); }} className="text-xs bg-slate-700 hover:bg-slate-600 text-white font-bold px-3 py-1.5 rounded-lg transition">
+                            🔄 Reorder
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -1423,6 +1923,200 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── SAVED ADDRESSES ── */}
+          {viewMode === 'addresses' && (
+            <div className="p-4 animate-fade-in">
+              <h2 className="text-xl font-black mb-5">Saved Addresses</h2>
+              <div className="space-y-4">
+                {savedAddresses.length === 0 ? (
+                  <p className="text-slate-400">No saved addresses yet.</p>
+                ) : (
+                  savedAddresses.map((addr, idx) => (
+                    <div key={idx} className="bg-slate-800/50 p-4 rounded-2xl border border-white/5 flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                        <span className="text-2xl">📍</span>
+                        <p className="text-white font-bold">{addr}</p>
+                      </div>
+                      <button onClick={() => {
+                        const newAddresses = savedAddresses.filter((_, i) => i !== idx);
+                        setSavedAddresses(newAddresses);
+                        localStorage.setItem('lb_addresses', JSON.stringify(newAddresses));
+                      }} className="text-rose-400 hover:text-rose-300 px-2 font-black text-xl">✕</button>
+                    </div>
+                  ))
+                )}
+                <div className="mt-4 flex gap-2">
+                  <input type="text" id="newAddressInput" placeholder="Add new address..." className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-white outline-none focus:border-emerald-500 text-sm" />
+                  <button onClick={() => {
+                    const input = document.getElementById('newAddressInput');
+                    if (input.value.trim()) {
+                      const newAddresses = [...savedAddresses, input.value.trim()];
+                      setSavedAddresses(newAddresses);
+                      localStorage.setItem('lb_addresses', JSON.stringify(newAddresses));
+                      input.value = '';
+                    }
+                  }} className="bg-emerald-500 text-slate-950 font-bold px-5 py-2 rounded-xl text-sm hover:bg-emerald-400 transition">Add</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── NOTIFICATIONS ── */}
+          {viewMode === 'notifications' && (
+            <div className="p-4 animate-fade-in">
+              <h2 className="text-xl font-black mb-5">Notifications</h2>
+              <div className="space-y-3">
+                {[
+                  { icon: '🎉', title: 'Welcome to LocalBite!', time: '1 day ago', desc: 'Enjoy ₹100 off on your first order. Use code LOCALBITE10.' },
+                  { icon: '🛵', title: 'Order Delivered', time: '2 days ago', desc: 'Your order from Burger King was delivered successfully.' },
+                  { icon: '🔥', title: 'Surge Pricing Alert', time: 'Just now', desc: 'High demand in your area. Delivery fees might be higher.' }
+                ].map((notif, idx) => (
+                  <div key={idx} className="bg-slate-800/50 p-4 rounded-2xl border border-white/5 flex gap-4 items-start">
+                    <span className="text-3xl">{notif.icon}</span>
+                    <div>
+                      <p className="font-bold text-white text-sm">{notif.title}</p>
+                      <p className="text-[10px] text-emerald-400 font-bold mb-1">{notif.time}</p>
+                      <p className="text-xs text-slate-400">{notif.desc}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── OFFERS & VOUCHERS ── */}
+          {viewMode === 'offers' && (
+            <div className="p-4 animate-fade-in">
+              <h2 className="text-xl font-black mb-5">Offers & Vouchers</h2>
+              <div className="space-y-4">
+                {[
+                  { code: 'LOCALBITE10', desc: 'Flat 10% off on all orders', min: 200 },
+                  { code: 'FREEDEL', desc: 'Free Delivery on orders above ₹400', min: 400 },
+                  { code: 'PIZZAPARTY', desc: '20% off on Pizzas', min: 300 }
+                ].map((offer, idx) => (
+                  <div key={idx} className="bg-gradient-to-r from-emerald-900/30 to-slate-800/80 p-4 rounded-2xl border border-emerald-500/20 flex justify-between items-center">
+                    <div>
+                      <p className="font-black text-emerald-400 text-lg tracking-widest">{offer.code}</p>
+                      <p className="text-sm text-white font-bold">{offer.desc}</p>
+                      <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider">Min. order: ₹{offer.min}</p>
+                    </div>
+                    <button onClick={() => {
+                       navigator.clipboard.writeText(offer.code);
+                       alert(`${offer.code} copied to clipboard!`);
+                    }} className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-4 py-2 rounded-xl text-xs font-black hover:bg-emerald-500/30 transition hover:scale-105">
+                      COPY
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── MY REVIEWS ── */}
+          {viewMode === 'reviews' && (
+            <div className="p-4 animate-fade-in">
+              <h2 className="text-xl font-black mb-5">My Reviews</h2>
+              <div className="space-y-4">
+                {[
+                  { rest: 'Truffles', rating: 5, date: '1 week ago', text: 'Amazing food as always! Fast delivery and great packaging.' },
+                  { rest: 'Meghana Foods', rating: 4, date: '2 weeks ago', text: 'Biryani was good, but slightly less spicy than usual.' }
+                ].map((rev, idx) => (
+                  <div key={idx} className="bg-slate-800/50 p-4 rounded-2xl border border-white/5">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <p className="font-bold text-white text-sm">{rev.rest}</p>
+                        <p className="text-[10px] text-slate-500">{rev.date}</p>
+                      </div>
+                      <div className="flex gap-1">
+                        {[1,2,3,4,5].map(star => (
+                          <span key={star} className={`text-sm ${star <= rev.rating ? 'text-amber-400' : 'text-slate-700'}`}>★</span>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="text-xs text-slate-300 bg-slate-900/50 p-3 rounded-xl border border-white/5 mt-2">{rev.text}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── PAYMENT METHODS ── */}
+          {viewMode === 'payments' && (
+            <div className="p-4 animate-fade-in">
+              <h2 className="text-xl font-black mb-5">Payment Methods</h2>
+              <div className="space-y-3">
+                <div className="bg-slate-800/50 p-4 rounded-2xl border border-emerald-500/30 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-amber-500/10 flex items-center justify-center text-xl">💵</div>
+                    <div>
+                      <p className="font-bold text-white text-sm">Cash on Delivery</p>
+                      <p className="text-[10px] text-slate-400">Pay when order arrives</p>
+                    </div>
+                  </div>
+                  <span className="text-emerald-400 font-black text-[10px] bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">DEFAULT</span>
+                </div>
+                <div className="bg-slate-800/50 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-violet-500/10 flex items-center justify-center text-xl">📱</div>
+                    <div>
+                      <p className="font-bold text-white text-sm">localbite@upi</p>
+                      <p className="text-[10px] text-slate-400">Linked UPI ID</p>
+                    </div>
+                  </div>
+                </div>
+                <button className="w-full mt-2 py-3 border-2 border-dashed border-slate-700 rounded-2xl text-slate-400 hover:text-white hover:border-slate-500 hover:bg-slate-800/50 transition font-bold text-sm">
+                  + Add New Payment Method
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ── PRIVACY & SECURITY ── */}
+          {viewMode === 'privacy' && (
+            <div className="p-4 animate-fade-in">
+              <h2 className="text-xl font-black mb-5">Privacy & Security</h2>
+              <div className="space-y-4">
+                {[
+                  { title: 'Location Tracking', desc: 'Allow LocalBite to access your location for accurate delivery estimates.' },
+                  { title: 'Share Data with Partners', desc: 'Help restaurants improve by sharing your anonymized ordering trends.' },
+                  { title: 'Two-Factor Authentication', desc: 'Secure your account with OTP login during checkout.' }
+                ].map((item, idx) => (
+                  <div key={idx} className="bg-slate-800/50 p-4 rounded-2xl border border-white/5 flex justify-between items-center gap-4">
+                    <div className="flex-1">
+                      <p className="font-bold text-white text-sm">{item.title}</p>
+                      <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{item.desc}</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input type="checkbox" className="sr-only peer" defaultChecked={idx !== 1} />
+                      <div className="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── ABOUT ── */}
+          {viewMode === 'about' && (
+            <div className="p-4 animate-fade-in text-center py-12">
+              <div className="w-24 h-24 mx-auto bg-gradient-to-br from-emerald-500 to-teal-600 rounded-3xl flex items-center justify-center text-5xl mb-5 shadow-lg shadow-emerald-500/20">
+                🍔
+              </div>
+              <h2 className="text-2xl font-black text-white">LocalBite AI</h2>
+              <p className="text-emerald-400 font-bold text-xs uppercase tracking-widest mb-4">Version 2.0.0</p>
+              <p className="text-slate-400 text-sm max-w-xs mx-auto mb-8 leading-relaxed">
+                Your smart AI companion for finding and ordering the best local food. Powered by advanced routing and personalized AI mood-based recommendations.
+              </p>
+              <div className="flex justify-center gap-3 text-xs text-slate-500 font-bold bg-slate-800/50 py-3 px-4 rounded-xl inline-flex border border-white/5">
+                <a href="#" className="hover:text-emerald-400 transition">Terms</a>
+                <span>•</span>
+                <a href="#" className="hover:text-emerald-400 transition">Privacy</a>
+                <span>•</span>
+                <a href="#" className="hover:text-emerald-400 transition">Licenses</a>
+              </div>
             </div>
           )}
 
@@ -1488,6 +2182,92 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
         </div>
       </div>
 
+      {/* AI Chat Floating Bubble */}
+      <button
+        onClick={() => setShowAIChat(true)}
+        className={`fixed bottom-24 right-4 z-50 w-14 h-14 bg-gradient-to-br from-violet-600 to-purple-700 rounded-full shadow-2xl shadow-violet-500/30 flex items-center justify-center text-2xl hover:scale-110 transition-all border-2 border-violet-400/30 ${
+          showAIChat ? 'hidden' : ''
+        }`}>
+        🤖
+      </button>
+
+      {/* AI Chat Panel */}
+      {showAIChat && (
+        <div className="fixed bottom-20 right-2 z-50 w-[calc(100%-16px)] max-w-sm">
+          <div className="bg-slate-900 border border-violet-500/30 rounded-3xl shadow-2xl shadow-violet-500/10 overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-violet-900/60 to-slate-900 border-b border-violet-500/20 px-4 py-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center text-lg">🤖</div>
+                <div>
+                  <p className="font-black text-white text-sm">LocalBite AI</p>
+                  <p className="text-violet-400 text-[10px] font-bold">Powered by Gemini ✨</p>
+                </div>
+              </div>
+              <button onClick={() => setShowAIChat(false)} className="text-slate-400 hover:text-white w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center transition text-xs">✕</button>
+            </div>
+            {/* Messages */}
+            <div className="h-56 overflow-y-auto p-4 space-y-3 bg-slate-950/40">
+              {chatMessages.map((msg, i) => (
+                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-sm ${
+                    msg.role === 'user'
+                      ? 'bg-emerald-600 text-white rounded-br-sm'
+                      : 'bg-slate-800 text-slate-200 rounded-bl-sm border border-white/5'
+                  }`}>
+                    <p>{msg.text}</p>
+                    {msg.restaurant && (
+                      <button
+                        onClick={() => { openMenu({ id: msg.restaurant.id, name: msg.restaurant.name, image_url: msg.restaurant.image_url }); setShowAIChat(false); }}
+                        className="mt-2 w-full bg-violet-600/30 border border-violet-500/30 rounded-xl p-2 text-left hover:bg-violet-600/50 transition">
+                        <p className="font-bold text-violet-300 text-xs">🏪 {msg.restaurant.name}</p>
+                        <p className="text-violet-400 text-[10px]">
+                          {msg.restaurant.best_dish || msg.restaurant.tags || 'Local Favorite'}
+                          {msg.restaurant.dish_price ? ` · ₹${msg.restaurant.dish_price}` : ''}
+                          {msg.restaurant.rating ? ` · ${msg.restaurant.rating}⭐` : ''}
+                        </p>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {chatLoading && (
+                <div className="flex justify-start">
+                  <div className="bg-slate-800 rounded-2xl rounded-bl-sm px-4 py-3 border border-white/5">
+                    <div className="flex gap-1">
+                      {[0,1,2].map(i => <div key={i} className="w-1.5 h-1.5 bg-violet-400 rounded-full animate-bounce" style={{ animationDelay: `${i * 0.15}s` }} />)}
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={chatEndRef} />
+            </div>
+            {/* Input */}
+            <div className="p-3 border-t border-white/5 flex gap-2">
+              <input
+                type="text" value={chatInput} onChange={e => setChatInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && sendChatMessage()}
+                placeholder="I'm craving something spicy..."
+                className="flex-1 bg-slate-800 border border-white/5 rounded-xl px-4 py-2.5 text-white text-sm outline-none focus:border-violet-500 transition placeholder:text-slate-600"
+              />
+              <button onClick={sendChatMessage}
+                className="w-10 h-10 bg-violet-600 hover:bg-violet-500 rounded-xl flex items-center justify-center transition shadow-lg shadow-violet-500/20">
+                🚀
+              </button>
+            </div>
+            {/* Quick suggestions */}
+            <div className="px-3 pb-3 flex gap-2 flex-wrap">
+              {['Spicy food 🌶️', 'Under ₹150 💸', 'How do I track? 📍', 'Any discounts? 🎁', 'Late night 🌙', 'Split bill 👥'].map((s, i) => (
+                <button key={i} onClick={() => { setChatInput(s); }}
+                  className="text-[10px] bg-slate-800 text-slate-400 border border-white/5 px-2.5 py-1 rounded-full hover:text-violet-400 hover:border-violet-500/30 transition font-bold">
+                  {s}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Profile Drawer */}
       {showProfile && (
         <div className="fixed inset-0 z-[200] flex">
@@ -1495,31 +2275,51 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
           <div className="relative ml-auto w-80 h-full bg-slate-900 border-l border-white/10 flex flex-col animate-slide-in-right">
             <div className="p-6 border-b border-white/5">
               <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-slate-950 font-black text-2xl">U</div>
+                <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-slate-950 font-black text-2xl">
+                  {userName ? userName.charAt(0).toUpperCase() : (userEmail ? userEmail.charAt(0).toUpperCase() : 'U')}
+                </div>
                 <div>
-                  <p className="font-black text-white text-lg">LocalBite User</p>
-                  <p className="text-slate-400 text-xs">Premium Member 🌟</p>
+                  <p className="font-black text-white text-lg">{profileData.name || 'LocalBite User'}</p>
+                  <p className="text-slate-400 text-xs">{profileData.email || 'Premium Member 🌟'}</p>
                 </div>
               </div>
             </div>
             <div className="flex-1 overflow-y-auto p-4 space-y-2">
-              {[
-                { icon: '📋', label: 'My Orders', action: () => { setViewMode('history'); setShowProfile(false); } },
-                { icon: '❤️', label: 'Saved Restaurants', action: () => { setViewMode('favorites'); setShowProfile(false); } },
-                { icon: '📍', label: 'Saved Addresses', action: null },
-                { icon: '🔔', label: 'Notifications', action: null },
-                { icon: '🎁', label: 'Offers & Vouchers', action: null },
-                { icon: '⭐', label: 'My Reviews', action: null },
-                { icon: '💳', label: 'Payment Methods', action: null },
-                { icon: '🛡️', label: 'Privacy & Security', action: null },
-                { icon: 'ℹ️', label: 'About LocalBite AI', action: null },
-              ].map((item, i) => (
-                <button key={i} onClick={item.action || undefined} className="w-full flex items-center gap-3 p-3.5 rounded-xl hover:bg-slate-800 transition text-left group">
-                  <span className="text-xl w-8">{item.icon}</span>
-                  <span className="font-semibold text-slate-300 group-hover:text-white flex-1">{item.label}</span>
-                  <span className="text-slate-600 group-hover:text-slate-400">›</span>
-                </button>
-              ))}
+              {viewMode === 'edit-profile' ? (
+                <div className="animate-fade-in space-y-4">
+                  <h3 className="text-white font-bold mb-4">Edit Profile</h3>
+                  {['name', 'email', 'phone', 'bio'].map(field => (
+                    <div key={field}>
+                      <label className="text-xs text-slate-400 font-bold mb-1 block uppercase">{field}</label>
+                      <input type="text" value={profileData[field]} onChange={e => setProfileData(p => ({ ...p, [field]: e.target.value }))} className="w-full p-3 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500 transition" />
+                    </div>
+                  ))}
+                  <button onClick={() => { localStorage.setItem('lb_profile', JSON.stringify(profileData)); setViewMode('home'); setShowProfile(false); }} className="w-full mt-4 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black py-3 rounded-xl transition shadow-lg shadow-emerald-500/20">
+                    Save Profile
+                  </button>
+                </div>
+              ) : (
+                <>
+                  {[
+                    { icon: '⚙️', label: 'Edit Profile', action: () => setViewMode('edit-profile') },
+                    { icon: '📋', label: 'My Orders', action: () => { setViewMode('history'); setShowProfile(false); } },
+                    { icon: '❤️', label: 'Saved Restaurants', action: () => { setViewMode('favorites'); setShowProfile(false); } },
+                    { icon: '📍', label: 'Saved Addresses', action: () => { setViewMode('addresses'); setShowProfile(false); } },
+                    { icon: '🔔', label: 'Notifications', action: () => { setViewMode('notifications'); setShowProfile(false); } },
+                    { icon: '🎁', label: 'Offers & Vouchers', action: () => { setViewMode('offers'); setShowProfile(false); } },
+                    { icon: '⭐', label: 'My Reviews', action: () => { setViewMode('reviews'); setShowProfile(false); } },
+                    { icon: '💳', label: 'Payment Methods', action: () => { setViewMode('payments'); setShowProfile(false); } },
+                    { icon: '🛡️', label: 'Privacy & Security', action: () => { setViewMode('privacy'); setShowProfile(false); } },
+                    { icon: 'ℹ️', label: 'About LocalBite AI', action: () => { setViewMode('about'); setShowProfile(false); } },
+                  ].map((item, i) => (
+                    <button key={i} onClick={item.action || undefined} className="w-full flex items-center gap-3 p-3.5 rounded-xl hover:bg-slate-800 transition text-left group">
+                      <span className="text-xl w-8">{item.icon}</span>
+                      <span className="font-semibold text-slate-300 group-hover:text-white flex-1">{item.label}</span>
+                      <span className="text-slate-600 group-hover:text-slate-400">›</span>
+                    </button>
+                  ))}
+                </>
+              )}
             </div>
             <div className="p-4 border-t border-white/5">
               <button onClick={() => { setShowProfile(false); goBack(); }} className="w-full py-3 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 font-bold hover:bg-rose-500/20 transition">
@@ -1527,6 +2327,139 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
               </button>
               <p className="text-center text-slate-600 text-xs mt-3">LocalBite AI v2.0 · Made with ❤️</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fraud / Issue Reporting Modal */}
+      {showFraudModal && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => !fraudLoading && setShowFraudModal(false)} />
+          <div className="relative bg-slate-900 border border-white/10 p-6 rounded-3xl w-full max-w-md shadow-2xl animate-fade-in-up">
+            <button onClick={() => setShowFraudModal(false)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-slate-800 rounded-full hover:bg-slate-700 text-slate-400 hover:text-white transition">✕</button>
+
+            {!fraudResponse ? (
+              <>
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-2xl bg-rose-500/15 border border-rose-500/20 flex items-center justify-center text-xl">⚠️</div>
+                  <div>
+                    <h2 className="text-xl font-black text-white">Report an Issue</h2>
+                    <p className="text-xs text-slate-400">Our AI will validate your report instantly</p>
+                  </div>
+                </div>
+
+                {/* Order context chip */}
+                {fraudOrder && (
+                  <div className="mb-4 flex items-center gap-2 bg-slate-800/60 border border-white/5 rounded-xl px-3 py-2">
+                    <span className="text-slate-400 text-xs">Order from</span>
+                    <span className="text-white font-bold text-xs">{fraudOrder.restaurant?.name || 'Restaurant'}</span>
+                    <span className="ml-auto text-slate-500 text-xs font-mono">#{String(fraudOrder.id).slice(0,8)}</span>
+                  </div>
+                )}
+
+                <textarea
+                  value={fraudReport}
+                  onChange={e => setFraudReport(e.target.value)}
+                  placeholder="Describe your issue clearly — e.g., 'The rider asked for extra cash', 'Items were missing from my order', 'Food was tampered with'..."
+                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-white placeholder-slate-500 focus:outline-none focus:border-rose-500/70 min-h-[130px] resize-none mb-4 text-sm leading-relaxed transition"
+                />
+
+                {/* Hint */}
+                <p className="text-xs text-slate-500 mb-4 flex items-center gap-1.5">
+                  <span>🤖</span> Gemini AI will classify your report as Genuine, Vague, or Spam and alert the owner automatically.
+                </p>
+
+                <button
+                  onClick={submitFraudReport}
+                  disabled={fraudLoading || !fraudReport.trim()}
+                  className="w-full bg-rose-500 text-white font-black py-3.5 rounded-xl hover:bg-rose-600 transition disabled:opacity-40 flex justify-center items-center gap-2 text-sm"
+                >
+                  {fraudLoading ? (
+                    <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> AI is analyzing...</>
+                  ) : '🚀 Submit Report'}
+                </button>
+              </>
+            ) : (() => {
+              const v = fraudResponse.verdict;
+              const isGenuine = v === 'GENUINE';
+              const isVague   = v === 'VAGUE';
+              const isSpam    = v === 'SPAM';
+
+              const verdictConfig = {
+                GENUINE: { icon: '🚨', label: 'Genuine Issue Detected', color: 'text-rose-400', bg: 'bg-rose-500/10', border: 'border-rose-500/25', badge: 'bg-rose-500/20 text-rose-300' },
+                VAGUE:   { icon: '🔍', label: 'More Detail Needed',     color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/25', badge: 'bg-amber-500/20 text-amber-300' },
+                SPAM:    { icon: '🛡️', label: 'Report Not Valid',        color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/25', badge: 'bg-emerald-500/20 text-emerald-300' },
+              }[v] || { icon: '📋', label: 'Issue Logged', color: 'text-slate-400', bg: 'bg-slate-800', border: 'border-white/5', badge: 'bg-slate-700 text-slate-300' };
+
+              return (
+                <div className="animate-fade-in">
+                  {/* Verdict Header */}
+                  <div className={`rounded-2xl ${verdictConfig.bg} border ${verdictConfig.border} p-4 mb-4 flex items-center gap-3`}>
+                    <span className="text-3xl">{verdictConfig.icon}</span>
+                    <div>
+                      <p className={`font-black text-base ${verdictConfig.color}`}>{verdictConfig.label}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${verdictConfig.badge}`}>{v}</span>
+                        {fraudResponse.urgency && (
+                          <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-slate-700/80 text-slate-300">
+                            {fraudResponse.urgency} Priority
+                          </span>
+                        )}
+                        {fraudResponse.category && (
+                          <span className="text-xs text-slate-400">{fraudResponse.category}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* AI Summary */}
+                  <div className="bg-slate-800/50 rounded-xl p-3.5 border border-white/5 mb-3">
+                    <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">AI Summary</p>
+                    <p className="text-sm text-slate-200 leading-relaxed">{fraudResponse.summary}</p>
+                  </div>
+
+                  {/* Next Steps — only for GENUINE or VAGUE */}
+                  {(isGenuine || isVague) && fraudResponse.next_steps?.length > 0 && (
+                    <div className="bg-black/20 rounded-xl p-3.5 border border-white/5 mb-4">
+                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Recommended Next Steps</p>
+                      <ul className="space-y-1.5">
+                        {fraudResponse.next_steps.map((step, i) => (
+                          <li key={i} className="text-sm text-slate-300 flex items-start gap-2">
+                            <span className="text-emerald-400 mt-0.5 shrink-0">›</span>{step}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Email sent badge */}
+                  {isGenuine && (
+                    <div className={`flex items-center gap-2 rounded-xl px-3.5 py-2.5 mb-4 text-xs font-bold ${
+                      fraudResponse.email_sent
+                        ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'
+                        : 'bg-slate-800/60 border border-white/5 text-slate-400'
+                    }`}>
+                      <span>{fraudResponse.email_sent ? '✅' : '📋'}</span>
+                      {fraudResponse.email_sent
+                        ? `Owner has been automatically notified at ${userEmail || 'your email'}`
+                        : 'Issue logged — owner will be notified via dashboard'}
+                    </div>
+                  )}
+
+                  {/* SPAM message */}
+                  {isSpam && (
+                    <div className="bg-slate-800/40 border border-white/5 rounded-xl px-3.5 py-2.5 mb-4">
+                      <p className="text-xs text-slate-400 leading-relaxed">Our AI flagged this report as spam or invalid. If you believe this is an error, please try describing your issue more specifically with order details.</p>
+                    </div>
+                  )}
+
+                  <button onClick={() => setShowFraudModal(false)} className="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-3.5 rounded-xl transition text-sm">
+                    Close
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

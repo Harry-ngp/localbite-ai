@@ -129,10 +129,11 @@ function AuthGateway({ onLogin }) {
 }
 
 function MainApp() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userId, setUserId] = useState(null);
-  const [userEmail, setUserEmail] = useState('');
-  const [currentRoute, setCurrentRoute] = useState('/');
+  const [isAuthenticated, setIsAuthenticated] = useState(() => localStorage.getItem('lb_auth') === 'true');
+  const [userId, setUserId] = useState(() => localStorage.getItem('lb_userId'));
+  const [userEmail, setUserEmail] = useState(() => localStorage.getItem('lb_userEmail') || '');
+  const [userName, setUserName] = useState(() => localStorage.getItem('lb_userName') || '');
+  const [currentRoute, setCurrentRoute] = useState(() => localStorage.getItem('lb_route') || '/');
   const [globalOrders, setGlobalOrders] = useState(() => JSON.parse(localStorage.getItem('localbite_orders')) || []);
   const toast = useToast();
 
@@ -163,24 +164,43 @@ function MainApp() {
     });
   };
 
-  const handleLogin = (role, id, email = '') => {
+  const handleLogin = (role, id, email = '', name = '') => {
     setUserId(id);
     setUserEmail(email);
+    setUserName(name);
     setIsAuthenticated(true);
     setCurrentRoute(`/${role}`);
+    
+    // Persist session
+    localStorage.setItem('lb_auth', 'true');
+    localStorage.setItem('lb_userId', id);
+    localStorage.setItem('lb_userEmail', email);
+    localStorage.setItem('lb_userName', name);
+    localStorage.setItem('lb_route', `/${role}`);
+    
     toast(`Successfully authenticated as ${role}!`, 'success');
   };
 
   const handleLogout = () => {
     setIsAuthenticated(false);
     setUserId(null);
+    setUserEmail('');
+    setUserName('');
     setCurrentRoute('/');
+    
+    // Clear session
+    localStorage.removeItem('lb_auth');
+    localStorage.removeItem('lb_userId');
+    localStorage.removeItem('lb_userEmail');
+    localStorage.removeItem('lb_userName');
+    localStorage.removeItem('lb_route');
+    
     toast('Logged out successfully', 'info');
   };
 
   if (!isAuthenticated) return <AuthGateway onLogin={handleLogin} />;
 
-  if (currentRoute === '/customer') return <CustomerScreen goBack={handleLogout} addGlobalOrder={addGlobalOrder} currentCustomerId={userId} userEmail={userEmail} />;
+  if (currentRoute === '/customer') return <CustomerScreen goBack={handleLogout} addGlobalOrder={addGlobalOrder} currentCustomerId={userId} userEmail={userEmail} userName={userName} />;
   if (currentRoute === '/partner') return <PartnerScreen goBack={handleLogout} globalOrders={globalOrders} updateGlobalOrderStatus={updateGlobalOrderStatus} />;
   if (currentRoute === '/rider') return <RiderScreen goBack={handleLogout} globalOrders={globalOrders} updateGlobalOrderStatus={updateGlobalOrderStatus} />;
 
