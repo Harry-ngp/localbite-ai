@@ -48,15 +48,27 @@ function DeleteModal({ item, onConfirm, onCancel }) {
 }
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
-function StatCard({ label, value, sub, color, icon, animate }) {
+const STAT_GRADIENTS = {
+  emerald: 'from-emerald-500/10 to-teal-500/5 border-emerald-500/20 hover:border-emerald-500/40',
+  amber:   'from-amber-500/10  to-orange-500/5 border-amber-500/20   hover:border-amber-500/40',
+  rose:    'from-rose-500/10   to-pink-500/5   border-rose-500/20    hover:border-rose-500/40',
+  blue:    'from-blue-500/10   to-cyan-500/5   border-blue-500/20    hover:border-blue-500/40',
+};
+const STAT_TEXT = { emerald: 'text-emerald-400', amber: 'text-amber-400', rose: 'text-rose-400', blue: 'text-blue-400' };
+
+function StatCard({ label, value, sub, color = 'emerald', icon, animate }) {
+  const grad = STAT_GRADIENTS[color] || STAT_GRADIENTS.emerald;
+  const txt  = STAT_TEXT[color] || STAT_TEXT.emerald;
   return (
-    <div className={`bg-slate-800/50 p-5 rounded-3xl border border-white/5 shadow-lg hover:border-${color}-500/30 transition-all hover:-translate-y-0.5 group`}>
-      <div className="flex items-start justify-between mb-3">
-        <p className="text-slate-400 text-sm font-medium">{label}</p>
-        <span className="text-2xl">{icon}</span>
+    <div className={`bg-gradient-to-br ${grad} p-5 rounded-2xl border shadow-lg hover:-translate-y-1 transition-all duration-200 group relative overflow-hidden`}>
+      {/* Background icon */}
+      <div className="absolute -bottom-2 -right-2 text-6xl opacity-5 group-hover:opacity-10 transition-opacity duration-300 select-none">{icon}</div>
+      <div className="flex items-start justify-between mb-4">
+        <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">{label}</p>
+        <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg bg-white/5 border border-white/8`}>{icon}</div>
       </div>
-      <p className={`text-3xl font-black text-${color === 'amber' ? 'amber' : color === 'rose' ? 'rose' : color === 'blue' ? 'blue' : 'white'}-400 ${animate ? 'animate-count-up' : ''}`}>{value}</p>
-      {sub && <p className="text-xs text-slate-500 mt-1 font-medium">{sub}</p>}
+      <p className={`text-3xl font-black ${txt} ${animate ? 'animate-count-up' : ''} mb-1`}>{value}</p>
+      {sub && <p className="text-xs text-slate-500 font-medium">{sub}</p>}
     </div>
   );
 }
@@ -230,7 +242,37 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
     };
   }, []);
 
-  const toggleStore = () => { setIsStoreOpen(!isStoreOpen); setStatus(!isStoreOpen ? '✅ Store ONLINE' : '🛑 Store OFFLINE'); setTimeout(() => setStatus(''), 3000); };
+  const toggleStore = async () => {
+    if (!restaurant || !partnerId) {
+      setStatus('⚠️ Please log in first.');
+      setTimeout(() => setStatus(''), 3000);
+      return;
+    }
+    const newState = !isStoreOpen;
+    setIsStoreOpen(newState);
+    setStatus(newState ? '⏳ Opening store...' : '⏳ Closing store...');
+    try {
+      const res = await fetch(
+        `http://127.0.0.1:8000/api/v1/partners/${partnerId}/restaurant/${restaurant.id}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ is_open: newState }),
+        }
+      );
+      if (res.ok) {
+        setStatus(newState ? '✅ Store ONLINE — customers can order' : '🛑 Store OFFLINE — hidden from customers');
+      } else {
+        // Revert on failure
+        setIsStoreOpen(!newState);
+        setStatus('❌ Failed to update store status.');
+      }
+    } catch (e) {
+      setIsStoreOpen(!newState);
+      setStatus('❌ Could not reach server.');
+    }
+    setTimeout(() => setStatus(''), 3500);
+  };
 
   const handleLogin = async () => {
     setStatus('⏳ Authenticating...');
@@ -241,6 +283,7 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
         setPartnerId(data.partner_id);
         if (data.restaurant) {
           setRestaurant(data.restaurant);
+          setIsStoreOpen(data.restaurant.is_open !== false); // read persisted open state
           setSettingsRestName(data.restaurant.name || '');
           setSettingsRestDesc(data.restaurant.description || '');
           setSettingsRestAddr(data.restaurant.address || '');
@@ -378,12 +421,14 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
           <h2 className="text-3xl font-black mb-2 text-amber-400">Register Your Kitchen</h2>
           <p className="text-slate-400 mb-8">Set up your restaurant profile to start receiving orders.</p>
           <div className="flex flex-col gap-5">
-            {[{ v: restName, s: setRestName, p: 'Restaurant Name' }, { v: restDesc, s: setRestDesc, p: 'Short Description' }, { v: restAddr, s: setRestAddr, p: 'Full Address' }, { v: restImg, s: setRestImg, p: 'Header Image URL' }].map((f, i) => (
-              <input key={i} type="text" value={f.v} onChange={e => f.s(e.target.value)} className="w-full p-4 bg-slate-800 border border-slate-700 rounded-xl outline-none focus:border-amber-500 transition text-white" placeholder={f.p} />
+            {[{ v: restName, s: setRestName, p: 'Restaurant Name' }, { v: restDesc, s: setRestDesc, p: 'Description (e.g. Indian, Chinese)' }, { v: restAddr, s: setRestAddr, p: 'Complete Address' }, { v: restContact, s: setRestContact, p: 'Contact Number' }].map((f, i) => (
+              <input key={i} type="text" value={f.v} onChange={e => f.s(e.target.value)} className="w-full p-4 bg-slate-800 border border-slate-700 rounded-2xl text-white focus:ring-2 focus:ring-amber-500 outline-none transition" placeholder={f.p} />
             ))}
-            <button onClick={createRestaurant} className="w-full bg-amber-500 hover:bg-amber-400 text-slate-900 font-black py-4 rounded-xl transition text-lg">Launch Kitchen 🚀</button>
+            <button onClick={registerRestaurant} className="w-full bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white font-black py-4 rounded-2xl shadow-lg shadow-amber-500/25 transition transform hover:-translate-y-1 text-lg mt-2">
+              Open Restaurant →
+            </button>
+            {status && <p className="mt-2 text-amber-300 text-sm font-semibold">{status}</p>}
           </div>
-          {status && <p className="mt-4 text-amber-300 text-center animate-pulse">{status}</p>}
         </div>
       </div>
     );
@@ -391,17 +436,22 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
 
   // ── MAIN DASHBOARD ──
   return (
-    <div className="min-h-screen bg-[#0f172a] text-white flex font-sans overflow-hidden">
+    <div className="min-h-screen bg-[#0a0f1e] text-white flex font-sans overflow-hidden">
 
       {/* ── SIDEBAR ── */}
-      <div className="w-64 bg-slate-900 border-r border-white/5 flex flex-col h-screen p-4 hidden md:flex shrink-0">
-        <div className="mb-8 px-2 mt-4">
-          <p className="text-[10px] font-bold text-amber-500/70 uppercase tracking-widest mb-1">Partner Portal</p>
-          <h2 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 truncate leading-tight">{restaurant.name}</h2>
-          <p className="text-xs text-slate-500 mt-1 truncate">{restaurant.address}</p>
+      <div className="w-16 md:w-60 xl:w-64 bg-slate-900/80 backdrop-blur-xl border-r border-white/5 flex flex-col h-screen shrink-0 transition-all duration-300">
+        {/* Logo */}
+        <div className="px-4 py-5 border-b border-white/5 hidden md:block">
+          <p className="text-[9px] font-black text-amber-500/60 uppercase tracking-widest mb-1">Partner Portal</p>
+          <h2 className="text-base font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 truncate leading-tight">{restaurant.name}</h2>
+          <p className="text-[10px] text-slate-600 mt-0.5 truncate">{restaurant.address}</p>
+        </div>
+        {/* Mobile logo (icon only) */}
+        <div className="flex items-center justify-center py-4 md:hidden border-b border-white/5">
+          <span className="text-2xl">🍳</span>
         </div>
 
-        <div className="flex flex-col gap-1 flex-grow">
+        <div className="flex flex-col gap-1 flex-grow p-2 overflow-y-auto">
           {[
             { id: 'overview', icon: '📊', label: 'Overview' },
             { id: 'orders',   icon: '🧾', label: 'Live Orders', badge: newOrders.length },
@@ -412,16 +462,35 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
             { id: 'earnings', icon: '💰', label: 'Earnings' },
           ].map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-              className={`p-3.5 rounded-xl flex items-center justify-between font-semibold transition group ${activeTab === tab.id ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
-              <span className="flex items-center gap-3"><span>{tab.icon}</span>{tab.label}</span>
-              {tab.badge > 0 && <span className="bg-rose-500 text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse">{tab.badge}</span>}
+              className={`relative p-3 rounded-xl flex items-center justify-center md:justify-between font-semibold transition-all duration-200 group ${
+                activeTab === tab.id
+                  ? 'bg-gradient-to-r from-amber-500/15 to-orange-500/5 text-amber-400 border border-amber-500/25 shadow-sm'
+                  : 'text-slate-500 hover:bg-white/4 hover:text-slate-200'
+              }`}>
+              <span className="flex items-center gap-3">
+                <span className="text-xl leading-none">{tab.icon}</span>
+                <span className="hidden md:inline text-sm">{tab.label}</span>
+              </span>
+              {tab.badge > 0 && (
+                <span className="bg-rose-500 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black animate-pulse min-w-[1.25rem] text-center">
+                  {tab.badge}
+                </span>
+              )}
+              {/* Active indicator */}
+              {activeTab === tab.id && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-amber-400 rounded-r-full" />
+              )}
             </button>
           ))}
         </div>
 
-        <div className="mt-auto border-t border-white/5 pt-4">
-          <button onClick={() => { setPartnerId(null); setRestaurant(null); }} className="w-full p-3.5 rounded-xl text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition font-semibold flex items-center gap-2">
-            🚪 Log Out
+        <div className="p-2 border-t border-white/5">
+          <button
+            onClick={() => { setPartnerId(null); setRestaurant(null); }}
+            className="w-full p-3 rounded-xl text-slate-600 hover:text-rose-400 hover:bg-rose-500/8 transition-all font-semibold flex items-center justify-center md:justify-start gap-3 text-sm"
+          >
+            <span className="text-lg">🚪</span>
+            <span className="hidden md:inline">Log Out</span>
           </button>
         </div>
       </div>
@@ -430,27 +499,40 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
       <div className="flex-1 flex flex-col h-screen overflow-y-auto">
 
         {/* Top Bar */}
-        <div className="sticky top-0 z-20 bg-slate-900/90 backdrop-blur-xl border-b border-white/5 px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-black capitalize hidden md:block">{activeTab === 'kanban' ? 'Kanban Board' : activeTab}</h1>
-            {status && <span className="text-sm font-bold text-amber-300 animate-pulse bg-amber-500/10 px-3 py-1 rounded-full">{status}</span>}
-            <div className={`text-xs px-3 py-1 rounded-full font-bold border ml-2 ${wsStatus === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-slate-700/30 text-slate-400 border-slate-600/30'}`}>
-              {wsStatus === 'connected' ? '🟢 Live' : '🟡 Connecting...'}
+        <div className="sticky top-0 z-20 bg-[#0a0f1e]/90 backdrop-blur-xl border-b border-white/5 px-4 sm:px-6 py-3.5 flex justify-between items-center gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <h1 className="text-lg font-black capitalize hidden sm:block truncate">
+              {activeTab === 'kanban' ? 'Kanban Board' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}
+            </h1>
+            {status && (
+              <span className="text-xs font-bold text-amber-300 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20 animate-pulse shrink-0">
+                {status}
+              </span>
+            )}
+            <div className={`hidden sm:flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full font-bold border ${
+              wsStatus === 'connected'
+                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                : 'bg-slate-700/30 text-slate-500 border-slate-600/20'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${wsStatus === 'connected' ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+              {wsStatus === 'connected' ? 'Live' : 'Connecting'}
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             {/* Sound toggle */}
-            <button onClick={() => setSoundEnabled(!soundEnabled)} className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg transition ${soundEnabled ? 'bg-amber-500/10 text-amber-400' : 'bg-slate-800 text-slate-500'}`}>
+            <button onClick={() => setSoundEnabled(!soundEnabled)} className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg transition ${
+              soundEnabled ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-slate-800 text-slate-500 border border-white/5'
+            }`}>
               {soundEnabled ? '🔔' : '🔕'}
             </button>
             {/* Store Open/Close toggle */}
             <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400 font-medium">Store:</span>
-              <button onClick={toggleStore} className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors ${isStoreOpen ? 'bg-emerald-500' : 'bg-slate-600'}`}>
-                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition ${isStoreOpen ? 'translate-x-6' : 'translate-x-1'}`} />
+              <span className="text-xs text-slate-500 font-medium hidden sm:block">Store:</span>
+              <button onClick={toggleStore} className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors shadow-inner ${isStoreOpen ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-all duration-200 ${isStoreOpen ? 'translate-x-6' : 'translate-x-1'}`} />
               </button>
-              <span className={`font-black text-xs ${isStoreOpen ? 'text-emerald-400' : 'text-slate-500'}`}>{isStoreOpen ? 'OPEN' : 'CLOSED'}</span>
+              <span className={`font-black text-xs hidden sm:block ${isStoreOpen ? 'text-emerald-400' : 'text-slate-500'}`}>{isStoreOpen ? 'OPEN' : 'CLOSED'}</span>
             </div>
           </div>
         </div>

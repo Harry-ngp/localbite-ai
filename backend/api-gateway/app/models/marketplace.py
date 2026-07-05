@@ -34,6 +34,7 @@ class Restaurant(Base):
     longitude = Column(Float, nullable=False)
     image_url = Column(String)
     rating = Column(Float, default=0.0)
+    is_open = Column(Boolean, default=True)
     contact_number = Column(String, nullable=True)
     support_number = Column(String, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

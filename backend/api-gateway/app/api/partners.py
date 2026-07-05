@@ -29,6 +29,7 @@ class RestaurantUpdate(BaseModel):
     image_url: Optional[str] = None
     contact_number: Optional[str] = None
     support_number: Optional[str] = None
+    is_open: Optional[bool] = None
 
 class MenuItemCreate(BaseModel):
     name: str
@@ -69,6 +70,7 @@ def partner_login(req: LoginRequest, db: Session = Depends(get_db)):
             "address": restaurant.address,
             "image_url": restaurant.image_url,
             "rating": restaurant.rating,
+            "is_open": restaurant.is_open if restaurant.is_open is not None else True,
             "latitude": restaurant.latitude,
             "longitude": restaurant.longitude,
             "contact_number": restaurant.contact_number,
@@ -111,9 +113,18 @@ def update_restaurant(partner_id: str, restaurant_id: str, req: RestaurantUpdate
     if req.image_url is not None: rest.image_url = req.image_url  # type: ignore[assignment]
     if req.contact_number is not None: rest.contact_number = req.contact_number  # type: ignore[assignment]
     if req.support_number is not None: rest.support_number = req.support_number  # type: ignore[assignment]
+    if req.is_open is not None: rest.is_open = req.is_open  # type: ignore[assignment]
     db.commit()
     db.refresh(rest)
-    return {"id": str(rest.id), "name": rest.name, "description": rest.description, "address": rest.address, "contact_number": rest.contact_number, "support_number": rest.support_number}
+    return {
+        "id": str(rest.id),
+        "name": rest.name,
+        "description": rest.description,
+        "address": rest.address,
+        "contact_number": rest.contact_number,
+        "support_number": rest.support_number,
+        "is_open": rest.is_open,
+    }
 
 @router.post("/restaurant/{restaurant_id}/menu")
 def add_menu_item(restaurant_id: str, req: MenuItemCreate, db: Session = Depends(get_db)):

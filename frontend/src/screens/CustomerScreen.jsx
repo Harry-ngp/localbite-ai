@@ -39,7 +39,7 @@ function fireConfetti() {
 function RestaurantSkeleton() {
   return (
     <div className="animate-pulse">
-      <div className="skeleton w-full h-56 rounded-2xl mb-3" />
+      <div className="skeleton w-full h-48 sm:h-52 lg:h-44 xl:h-48 rounded-2xl mb-3" />
       <div className="flex justify-between items-start px-1">
         <div className="flex-1">
           <div className="skeleton h-5 w-40 mb-2 rounded-lg" />
@@ -1029,14 +1029,14 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     return (
       <div className="min-h-screen bg-[#0f172a] text-white font-sans relative pb-28">
         {/* Hero Image */}
-        <div className="h-64 w-full relative">
+        <div className="h-64 sm:h-72 w-full relative">
           <img src={selectedRestaurant.img || selectedRestaurant.image_url} alt={selectedRestaurant.name} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/40 to-transparent" />
-          <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-4">
-            <button onClick={() => setSelectedRestaurant(null)} className="bg-black/50 backdrop-blur-md text-white p-2.5 rounded-full font-bold hover:bg-black/70 transition">
-              ← Back
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0f172a] via-[#0f172a]/30 to-transparent" />
+          <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-4 sm:p-5">
+            <button onClick={() => setSelectedRestaurant(null)} className="flex items-center gap-1.5 bg-black/50 backdrop-blur-xl text-white px-4 py-2 rounded-2xl font-bold hover:bg-black/70 transition text-sm border border-white/10">
+              Back
             </button>
-            <button onClick={() => toggleFavorite(selectedRestaurant.id)} className={`p-2.5 rounded-full backdrop-blur-md transition ${isFav ? 'bg-rose-500/70 text-white' : 'bg-black/50 text-white hover:bg-black/70'}`}>
+            <button onClick={() => toggleFavorite(selectedRestaurant.id)} className={`w-10 h-10 rounded-2xl backdrop-blur-xl flex items-center justify-center transition-all hover:scale-110 border ${isFav ? 'bg-rose-500/70 border-rose-500/40' : 'bg-black/40 border-white/10 hover:bg-black/60'}`}>
               {isFav ? '❤️' : '🤍'}
             </button>
           </div>
@@ -1065,7 +1065,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
             <div className="chips-row flex gap-2 overflow-x-auto pb-3 mb-6">
               {menuCategories.map(cat => (
                 <button key={cat} onClick={() => setActiveMenuCat(cat)}
-                  className={`shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-all ${activeMenuCat === cat ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20' : 'bg-slate-800 text-slate-400 hover:text-white border border-white/5'}`}>
+                  className={`shrink-0 px-4 py-2 rounded-xl text-sm font-bold transition-all duration-200 ${activeMenuCat === cat ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-lg shadow-emerald-500/20' : 'bg-slate-800/80 text-slate-400 hover:text-white border border-white/6'}`}>
                   {cat}
                 </button>
               ))}
@@ -1074,29 +1074,39 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
 
           {/* Menu Items */}
           {menuLoading ? (
-            <div className="space-y-4">
-              {[1,2,3].map(i => <div key={i} className="skeleton h-28 rounded-2xl" />)}
+            <div className="menu-grid">
+              {[1,2,3,4,5,6].map(i => <div key={i} className="skeleton h-28 rounded-2xl" />)}
             </div>
           ) : (
-            <div className="flex flex-col gap-4">
+          <div className="menu-grid">
               {filteredMenu.map((item, idx) => {
                 const cartItem = cart.find(c => c.id === item.id);
                 const isBestSeller = idx < 2;
+                const isOutOfStock = item.is_available === false || item.in_stock === false;
                 return (
-                  <div key={item.id} className="flex justify-between items-center bg-slate-900/60 p-4 rounded-2xl border border-white/5 hover:border-emerald-500/20 transition group animate-fade-in-up" style={{ animationDelay: `${idx * 50}ms` }}>
+                  <div key={item.id} className={`flex justify-between items-center p-4 rounded-2xl border transition group animate-fade-in-up ${
+                    isOutOfStock
+                      ? 'bg-slate-900/30 border-white/3 opacity-60'
+                      : 'bg-slate-900/60 border-white/5 hover:border-emerald-500/20'
+                  }`} style={{ animationDelay: `${idx * 50}ms` }}>
                     <div className="flex gap-4 flex-1 min-w-0">
-                      {item.image_url && <img src={item.image_url} alt={item.name} className="w-20 h-20 rounded-xl object-cover shadow-md shrink-0" />}
+                      {item.image_url && <img src={item.image_url} alt={item.name} className={`w-20 h-20 rounded-xl object-cover shadow-md shrink-0 ${isOutOfStock ? 'grayscale' : ''}`} />}
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-bold text-white">{item.name}</h3>
-                          {isBestSeller && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold shrink-0">⭐ BESTSELLER</span>}
+                          {isBestSeller && !isOutOfStock && <span className="text-[10px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded-full font-bold shrink-0">⭐ BESTSELLER</span>}
+                          {isOutOfStock && <span className="text-[10px] bg-slate-700/80 text-slate-400 border border-slate-600/50 px-2 py-0.5 rounded-full font-bold shrink-0">OUT OF STOCK</span>}
                         </div>
                         <p className="text-emerald-400 font-black text-lg mt-0.5">₹{item.price}</p>
                         <p className="text-slate-500 text-xs mt-1 line-clamp-2">{item.category} • Freshly prepared</p>
                       </div>
                     </div>
-                    <div className="bg-slate-800 rounded-xl flex items-center border border-emerald-500/20 overflow-hidden ml-3 shrink-0">
-                      {cartItem ? (
+                    <div className={`rounded-xl flex items-center border overflow-hidden ml-3 shrink-0 ${
+                      isOutOfStock ? 'bg-slate-800/50 border-slate-700/30' : 'bg-slate-800 border-emerald-500/20'
+                    }`}>
+                      {isOutOfStock ? (
+                        <span className="px-4 py-2 text-slate-500 font-bold text-xs cursor-not-allowed">Unavailable</span>
+                      ) : cartItem ? (
                         <>
                           <button onClick={() => removeFromCart(item.id)} className="w-9 h-9 text-emerald-400 hover:bg-slate-700 font-black text-lg transition flex items-center justify-center">−</button>
                           <span className="w-8 text-center font-black text-white text-sm">{cartItem.quantity}</span>
@@ -1606,21 +1616,28 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
   // ══════════════════════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-[#0f172a] text-white font-sans overflow-x-hidden">
-      <div className="w-full max-w-2xl mx-auto bg-slate-900 min-h-screen shadow-2xl relative">
+      <div className="w-full max-w-3xl lg:max-w-none lg:w-full mx-auto bg-slate-900 min-h-screen shadow-2xl relative">
 
         {/* ── STICKY HEADER ── */}
-        <div className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-xl pt-4 pb-2 px-4 border-b border-white/5">
+        <div className="sticky top-0 z-30 bg-slate-900/95 backdrop-blur-xl pt-4 pb-2 px-4 sm:px-6 border-b border-white/5">
           <div className="flex justify-between items-center mb-3">
-            <div className="flex items-center gap-2">
-              <span className="text-emerald-500 text-2xl">📍</span>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                <span className="text-emerald-400 text-base">📍</span>
+              </div>
               <div>
-                <h3 className="font-black text-white text-lg leading-tight flex items-center gap-1">Home <span className="text-xs text-slate-500">▼</span></h3>
-                <p className="text-xs text-slate-400">Near Current Location</p>
+                <h3 className="font-black text-white text-base sm:text-lg leading-tight flex items-center gap-1">
+                  Home <span className="text-xs text-slate-600">▼</span>
+                </h3>
+                <p className="text-xs text-slate-500">Near Current Location</p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <button onClick={() => setShowProfile(true)} className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-slate-950 font-black text-sm hover:scale-110 transition">
-                U
+              <button
+                onClick={() => setShowProfile(true)}
+                className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-slate-950 font-black text-sm hover:scale-110 transition shadow-lg shadow-emerald-500/20"
+              >
+                {(userName || userEmail || 'U').charAt(0).toUpperCase()}
               </button>
             </div>
           </div>
@@ -1756,12 +1773,13 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
           <div className="chips-row flex gap-2 overflow-x-auto pb-2">
             {categoriesWithAll.map(cat => (
               <button key={cat.name} onClick={() => setActiveCategory(activeCategory === cat.tag ? null : cat.tag)}
-                className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide transition-all ${
+                className={`shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-black uppercase tracking-wide transition-all duration-200 ${
                   (activeCategory === cat.tag || (cat.tag === null && !activeCategory))
-                    ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/20 scale-105'
-                    : 'bg-slate-800 text-slate-400 hover:text-white border border-white/5'
+                    ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 shadow-lg shadow-emerald-500/25'
+                    : 'bg-slate-800/80 text-slate-400 hover:text-white hover:bg-slate-700 border border-white/6'
                 }`}>
-                <span className="text-sm">{cat.icon}</span> {cat.name}
+                <span className="text-sm">{cat.icon}</span>
+                <span className="hidden sm:inline">{cat.name}</span>
               </button>
             ))}
           </div>
@@ -1769,28 +1787,38 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
 
         {status && <div className="px-4 py-2 text-center text-emerald-400 text-sm font-bold bg-emerald-500/10 border-b border-emerald-500/20">{status}</div>}
 
-        {/* ── BOTTOM NAV ── */}
-        <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-2xl z-40 bg-slate-900/95 backdrop-blur-xl border-t border-white/5 px-4 py-2 flex justify-around items-center">
+        {/* ── BOTTOM NAV (mobile only) ── */}
+        <div className="fixed bottom-0 left-0 right-0 z-40 glass border-t border-white/6 px-2 sm:px-6 py-2 flex justify-around items-center animate-nav-up" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom,0px))' }}>
           {[
-            { id: 'home', icon: '🏠', label: 'Explore' },
-            { id: 'history', icon: '📋', label: 'Orders', badge: orderHistory.length },
-            { id: 'favorites', icon: '❤️', label: 'Saved', badge: favoriteRestaurants.length },
-            { id: 'profile', icon: '👤', label: 'Profile' },
+            { id: 'home',      icon: '🏠', label: 'Explore' },
+            { id: 'history',   icon: '📋', label: 'Orders',  badge: orderHistory.length },
+            { id: 'favorites', icon: '❤️', label: 'Saved',   badge: favoriteRestaurants.length },
+            { id: 'profile',   icon: '👤', label: 'Profile' },
           ].map(tab => (
-            <button key={tab.id} onClick={() => { setViewMode(tab.id); if (tab.id === 'profile') setShowProfile(true); }}
-              className={`flex flex-col items-center gap-0.5 relative transition-all px-3 py-1 rounded-xl ${viewMode === tab.id ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}>
-              <span className="text-xl">{tab.icon}</span>
-              <span className="text-[10px] font-bold uppercase tracking-wide">{tab.label}</span>
+            <button key={tab.id}
+              onClick={() => { setViewMode(tab.id); if (tab.id === 'profile') setShowProfile(true); }}
+              className={`flex flex-col items-center gap-0.5 relative transition-all duration-200 flex-1 max-w-[5rem] py-1.5 rounded-xl ${
+                viewMode === tab.id
+                  ? 'text-emerald-400'
+                  : 'text-slate-500 hover:text-slate-300'
+              }`}
+            >
+              <span className={`text-xl sm:text-2xl transition-transform duration-200 ${viewMode === tab.id ? 'scale-110' : ''}`}>{tab.icon}</span>
+              <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">{tab.label}</span>
               {tab.badge > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-emerald-500 text-slate-950 text-[9px] font-black rounded-full flex items-center justify-center">{tab.badge > 9 ? '9+' : tab.badge}</span>
+                <span className="absolute top-0.5 right-2 sm:right-3 min-w-[1rem] h-4 bg-emerald-500 text-slate-950 text-[9px] font-black rounded-full flex items-center justify-center px-1">
+                  {tab.badge > 9 ? '9+' : tab.badge}
+                </span>
               )}
-              {viewMode === tab.id && <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-emerald-400 rounded-full" />}
+              {viewMode === tab.id && (
+                <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-emerald-400 rounded-full" />
+              )}
             </button>
           ))}
         </div>
 
         {/* ── CONTENT AREA ── */}
-        <div className="pb-24">
+        <div className="pb-24 px-4 sm:px-6 lg:px-8">
 
           {/* Hero Banner Carousel */}
           {viewMode === 'home' && (
@@ -2125,24 +2153,46 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
             <div className="p-4">
               {!aiDecision && (
                 <>
-                  <div className="flex justify-between items-center mb-4">
-                    <h2 className="text-xl font-black">{activeCategory ? `${categoriesWithAll.find(c=>c.tag===activeCategory)?.name || ''} Near You` : 'Top Restaurants for You'}</h2>
-                    <span className="text-xs text-slate-500 font-bold">{filteredRestaurants.length} places</span>
+                  <div className="flex justify-between items-center mb-5">
+                    <div>
+                      <h2 className="text-xl sm:text-2xl font-black">
+                        {activeCategory
+                          ? `${categoriesWithAll.find(c => c.tag === activeCategory)?.name || ''} Near You`
+                          : 'Top Picks For You'}
+                      </h2>
+                      <p className="text-xs text-slate-500 mt-0.5">{filteredRestaurants.length} restaurants available</p>
+                    </div>
                   </div>
-                  <div className="space-y-6">
+
+                  {/* Restaurant Grid — 1 col mobile, 2 col tablet+ */}
+                  <div className="restaurant-grid">
                     {feedLoading ? (
-                      [1,2,3].map(i => <RestaurantSkeleton key={i} />)
+                      [1,2,3,4].map(i => <RestaurantSkeleton key={i} />)
                     ) : filteredRestaurants.length > 0 ? (
                       filteredRestaurants.map((rest, idx) => {
                         const isFav = favoriteIds.includes(rest.id);
                         const discount = getDiscount(idx);
                         return (
-                          <div key={rest.id} className="group animate-fade-in-up" style={{ animationDelay: `${idx * 60}ms` }}>
-                            <div className="w-full h-52 rounded-2xl overflow-hidden relative shadow-xl mb-3 cursor-pointer" onClick={() => openMenu(rest)}>
-                              <img src={rest.img || rest.image_url} alt={rest.name} className="w-full h-full object-cover group-hover:scale-105 transition duration-500" />
-                              <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                          <div
+                            key={rest.id}
+                            className="group cursor-pointer animate-fade-in-up card-hover"
+                            style={{ animationDelay: `${idx * 50}ms` }}
+                            onClick={() => openMenu(rest)}
+                          >
+                            {/* Image */}
+                            <div className="relative w-full h-44 sm:h-48 rounded-2xl overflow-hidden shadow-xl mb-3">
+                              <img
+                                src={rest.img || rest.image_url}
+                                alt={rest.name}
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                                loading="lazy"
+                              />
+                              {/* Gradient overlay */}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
+
+                              {/* Discount badge */}
                               {discount && (
-                                <div className="absolute top-3 left-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-xs font-black px-3 py-1 rounded-full shadow-lg">
+                                <div className="absolute top-2.5 left-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-[10px] font-black px-2.5 py-1 rounded-full shadow-lg">
                                   {discount}
                                 </div>
                               )}

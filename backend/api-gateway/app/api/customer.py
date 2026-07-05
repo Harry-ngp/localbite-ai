@@ -116,8 +116,8 @@ def vibe_and_decision_search(req: VibeSearchRequest, db: Session = Depends(get_d
 @router.get("/search")
 def unified_search(q: str, db: Session = Depends(get_db)):
     """
-    Unified live search: returns matching restaurants AND matching menu items.
-    Searches: restaurant name, menu item name, menu item category, menu item description.
+    Unified live search: returns matching open restaurants AND in-stock menu items.
+    Closed restaurants and out-of-stock items are excluded from results.
     """
     if not q or len(q.strip()) < 1:
         return {"restaurants": [], "items": []}
@@ -125,10 +125,14 @@ def unified_search(q: str, db: Session = Depends(get_db)):
     query = q.strip().lower()
     words = [w for w in re.split(r'\W+', query) if len(w) >= 2]
 
-    # --- Search Restaurants ---
-    all_restaurants = db.query(Restaurant).all()
+    # Only search open restaurants
+    open_rest_ids = set()
+    all_restaurants = db.query(Restaurant).filter(
+        (Restaurant.is_open == True) | (Restaurant.is_open == None)  # noqa: E712
+    ).all()
     matched_restaurants = []
     for rest in all_restaurants:
+        open_rest_ids.add(str(rest.id))
         name_lower = rest.name.lower()
         desc_lower = (rest.description or '').lower()
         if any(w in name_lower or w in desc_lower for w in words):
@@ -148,11 +152,14 @@ def unified_search(q: str, db: Session = Depends(get_db)):
                 "match_type": "restaurant",
             })
 
-    # --- Search Menu Items ---
+    # --- Search available Menu Items from open restaurants only ---
     all_items = db.query(MenuItem).filter(MenuItem.is_available == True).all()
     matched_items = []
     seen_ids = set()
     for item in all_items:
+        # Skip items from closed restaurants
+        if str(item.restaurant_id) not in open_rest_ids:
+            continue
         item_name = item.name.lower()
         item_cat = (item.category or '').lower()
         item_desc = (item.description or '').lower()
@@ -182,12 +189,14 @@ def unified_search(q: str, db: Session = Depends(get_db)):
 
 @router.get("/restaurants")
 def get_live_restaurants(db: Session = Depends(get_db)):
-    """Returns all restaurants with computed dynamic fields"""
-    restaurants = db.query(Restaurant).all()
+    """Returns all OPEN restaurants with computed dynamic fields"""
+    restaurants = db.query(Restaurant).filter(
+        (Restaurant.is_open == True) | (Restaurant.is_open == None)  # noqa: E712
+    ).all()
     
     feed = []
     for rest in restaurants:
-        # Compute avg price from menu items
+        # Compute avg price from available menu items only
         items = db.query(MenuItem).filter(MenuItem.restaurant_id == rest.id, MenuItem.is_available == True).all()
         avg_price = round(sum(float(str(i.price)) for i in items) / len(items), 0) if items else 0
         categories = list(set(str(i.category) for i in items if i.category))
@@ -207,6 +216,7 @@ def get_live_restaurants(db: Session = Depends(get_db)):
             "avg_price": avg_price,
             "price": f"₹{int(avg_price)} for one" if avg_price else "₹200 for one",
             "menu_count": len(items),
+            "is_open": True,  # Only open restaurants are returned
             "img": rest.image_url or "https://images.unsplash.com/photo-1550547660-d9450f859349?w=500&q=80",
             "image_url": rest.image_url or "https://images.unsplash.com/photo-1550547660-d9450f859349?w=500&q=80",
             "address": rest.address,

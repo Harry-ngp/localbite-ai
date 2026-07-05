@@ -49,19 +49,28 @@ function CountdownRing({ seconds, total }) {
 }
 
 // ─── Stat Card ────────────────────────────────────────────────────────────────
-function StatCard({ label, value, unit, color, icon, sub }) {
-  const colorMap = { emerald: 'emerald', rose: 'rose', amber: 'amber', blue: 'blue' };
-  const c = colorMap[color] || 'emerald';
+const STAT_GRADIENTS = {
+  emerald: 'from-emerald-500/10 to-teal-500/5 border-emerald-500/20 hover:border-emerald-500/40',
+  amber:   'from-amber-500/10  to-orange-500/5 border-amber-500/20   hover:border-amber-500/40',
+  rose:    'from-rose-500/10   to-pink-500/5   border-rose-500/20    hover:border-rose-500/40',
+  blue:    'from-blue-500/10   to-cyan-500/5   border-blue-500/20    hover:border-blue-500/40',
+};
+const STAT_TEXT = { emerald: 'text-emerald-400', amber: 'text-amber-400', rose: 'text-rose-400', blue: 'text-blue-400' };
+
+function StatCard({ label, value, unit, color = 'emerald', icon, sub }) {
+  const grad = STAT_GRADIENTS[color] || STAT_GRADIENTS.emerald;
+  const txt  = STAT_TEXT[color] || STAT_TEXT.emerald;
   return (
-    <div className={`bg-slate-900/60 backdrop-blur-md border border-${c}-500/20 rounded-3xl p-5 shadow-lg hover:-translate-y-0.5 transition-all duration-200 group`}>
-      <div className="flex items-start justify-between mb-3">
+    <div className={`bg-gradient-to-br ${grad} p-5 rounded-2xl border shadow-lg hover:-translate-y-1 transition-all duration-200 group relative overflow-hidden`}>
+      <div className="absolute -bottom-2 -right-2 text-6xl opacity-5 group-hover:opacity-10 transition-opacity duration-300 select-none">{icon}</div>
+      <div className="flex items-start justify-between mb-4">
         <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">{label}</p>
-        <span className="text-2xl">{icon}</span>
+        <div className="w-9 h-9 rounded-xl flex items-center justify-center text-lg bg-white/5 border border-white/8">{icon}</div>
       </div>
-      <p className={`text-3xl font-black text-${c}-400`}>
+      <p className={`text-3xl font-black ${txt} mb-1`}>
         {unit === 'prefix' ? `₹${value}` : value}{unit && unit !== 'prefix' ? unit : ''}
       </p>
-      {sub && <p className="text-xs text-slate-500 mt-1 font-medium">{sub}</p>}
+      {sub && <p className="text-xs text-slate-500 font-medium">{sub}</p>}
     </div>
   );
 }
@@ -353,31 +362,34 @@ export default function RiderScreen({ goBack, globalOrders, updateGlobalOrderSta
     <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-slate-800 via-[#0f172a] to-black text-white font-sans">
 
       {/* Header */}
-      <div className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-xl border-b border-white/5 px-5 py-3 flex items-center justify-between">
+      <div className="sticky top-0 z-30 bg-[#0f172a]/95 backdrop-blur-xl border-b border-white/5 px-4 sm:px-6 py-3.5 flex items-center justify-between shadow-lg">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center font-black text-white">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center font-black text-white shadow-lg shadow-rose-500/20">
             {email[0].toUpperCase()}
           </div>
           <div>
             <p className="font-black text-white text-sm leading-tight">{email.split('@')[0]}</p>
-            <div className={`text-[10px] font-bold ${wsStatus === 'connected' ? 'text-emerald-400' : 'text-slate-400'}`}>
-              {wsStatus === 'connected' ? '🟢 Online' : '🟡 Connecting...'}
+            <div className={`flex items-center gap-1.5 text-[10px] font-bold mt-0.5 ${wsStatus === 'connected' ? 'text-emerald-400' : 'text-slate-400'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${wsStatus === 'connected' ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+              {wsStatus === 'connected' ? 'Online' : 'Connecting...'}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 sm:gap-3">
           {/* Online/Offline toggle */}
           <button onClick={() => { setIsOnline(!isOnline); setStatus(!isOnline ? '🟢 ONLINE: Scanning...' : '🔴 OFFLINE'); }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition border ${isOnline ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-slate-700/50 text-slate-400 border-slate-600/30'}`}>
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-xs transition-all duration-200 border shadow-inner ${isOnline ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25' : 'bg-slate-800 text-slate-400 border-slate-700/50 hover:bg-slate-700'}`}>
             <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
             {isOnline ? 'ONLINE' : 'OFFLINE'}
           </button>
-          <button onClick={() => { setIsLoggedIn(false); setRiderId(''); }} className="text-slate-400 hover:text-white p-2 bg-slate-800 rounded-xl transition text-xs font-bold">Out</button>
+          <button onClick={() => { setIsLoggedIn(false); setRiderId(''); }} className="w-9 h-9 flex items-center justify-center bg-slate-800 border border-white/5 hover:bg-rose-500/10 hover:text-rose-400 hover:border-rose-500/20 rounded-xl transition-all duration-200">
+            <span className="text-sm">🚪</span>
+          </button>
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="flex border-b border-white/5 bg-slate-900/50">
+      {/* Tab Navigation (Desktop) */}
+      <div className="hidden sm:flex border-b border-white/5 bg-slate-900/50 justify-center">
         {[
           { id: 'dashboard', icon: '📊', label: 'Dashboard' },
           { id: 'heatmap',   icon: '🔥', label: 'Heatmap' },
@@ -385,29 +397,34 @@ export default function RiderScreen({ goBack, globalOrders, updateGlobalOrderSta
           { id: 'profile',   icon: '👤', label: 'Profile' },
         ].map(tab => (
           <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-bold transition ${activeTab === tab.id ? 'text-rose-400 border-b-2 border-rose-400' : 'text-slate-500 hover:text-slate-300'}`}>
-            {tab.icon} {tab.label}
+            className={`flex items-center justify-center gap-2.5 px-8 py-3.5 text-sm font-bold transition-all relative ${
+              activeTab === tab.id ? 'text-rose-400' : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'
+            }`}>
+            <span>{tab.icon}</span> {tab.label}
+            {activeTab === tab.id && (
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-rose-400 rounded-t-full shadow-[0_-2px_10px_rgba(244,63,94,0.5)]" />
+            )}
           </button>
         ))}
       </div>
 
       {/* Vehicle Type Selector */}
-      <div className="flex justify-center gap-2 py-3 px-5 bg-slate-900/30 border-b border-white/5">
+      <div className="flex justify-center gap-2 py-3 px-4 sm:px-6 bg-slate-900/30 border-b border-white/5 overflow-x-auto chips-row">
         {VEHICLES.map(v => (
           <button key={v.id}
             onClick={() => { setVehicleType(v.id); localStorage.setItem('lb_vehicle', v.id); }}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-xs font-black transition border ${
+            className={`shrink-0 flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-black transition-all duration-200 border ${
               vehicleType === v.id
-                ? `bg-${v.color}-500/20 text-${v.color}-400 border-${v.color}-500/40 shadow-lg`
-                : 'bg-slate-800 text-slate-400 border-white/5 hover:border-white/20'
+                ? `bg-gradient-to-r from-${v.color}-500/20 to-${v.color}-600/10 text-${v.color}-400 border-${v.color}-500/40 shadow-lg shadow-${v.color}-500/10 scale-105`
+                : 'bg-slate-800/80 text-slate-400 border-white/5 hover:border-white/10 hover:bg-slate-800'
             }`}>
-            <span>{v.emoji}</span> {v.label}
-            <span className="text-[10px] opacity-70">₹{v.ratePerKm}/km</span>
+            <span className="text-sm">{v.emoji}</span> {v.label}
+            <span className={`text-[10px] ml-1 px-1.5 py-0.5 rounded-md ${vehicleType === v.id ? `bg-${v.color}-500/20` : 'bg-slate-700'}`}>₹{v.ratePerKm}/km</span>
           </button>
         ))}
       </div>
 
-      <div className="max-w-2xl mx-auto p-5 space-y-5">
+      <div className="w-full max-w-3xl mx-auto p-4 sm:p-6 space-y-6 pb-24 sm:pb-8">
 
         {/* ═══ PROFILE TAB ═══ */}
         {activeTab === 'profile' && (
@@ -777,6 +794,27 @@ export default function RiderScreen({ goBack, globalOrders, updateGlobalOrderSta
             </div>
           </div>
         )}
+      </div>
+
+      {/* ── BOTTOM NAV (Mobile Only) ── */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-xl border-t border-white/5 px-2 py-2 flex justify-around items-center pb-[env(safe-area-inset-bottom,0.5rem)]">
+        {[
+          { id: 'dashboard', icon: '📊', label: 'Dash' },
+          { id: 'heatmap',   icon: '🔥', label: 'Zones' },
+          { id: 'history',   icon: '📋', label: 'Trips' },
+          { id: 'profile',   icon: '👤', label: 'Me' },
+        ].map(tab => (
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+            className={`flex flex-col items-center gap-0.5 relative transition-all duration-200 flex-1 max-w-[5rem] py-1.5 rounded-xl ${
+              activeTab === tab.id ? 'text-rose-400' : 'text-slate-500 hover:text-slate-300'
+            }`}>
+            <span className={`text-xl transition-transform duration-200 ${activeTab === tab.id ? 'scale-110' : ''}`}>{tab.icon}</span>
+            <span className="text-[9px] font-bold uppercase tracking-wider">{tab.label}</span>
+            {activeTab === tab.id && (
+              <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-4 h-0.5 bg-rose-400 rounded-full" />
+            )}
+          </button>
+        ))}
       </div>
     </div>
   );
