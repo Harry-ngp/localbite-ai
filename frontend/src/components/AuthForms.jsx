@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import emailjs from '@emailjs/browser';
 import { useToast } from './Toast';
+import { API_BASE } from '../services/api';
 
 /* ─── Input Field Component ──────────────────────────────── */
 function Field({ id, label, type = 'text', value, onChange, placeholder, disabled, icon, autoFocus, required = true }) {
@@ -197,7 +198,7 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
     if (!email || !password) return toast('Please fill in all fields', 'error');
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/auth/login', {
+      const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, role: activeRole }),
@@ -247,7 +248,7 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
     if (password !== confirmPassword) return toast('Passwords do not match', 'error');
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:8000/api/v1/auth/signup', {
+      const res = await fetch(`${API_BASE}/auth/signup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, role: activeRole }),

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { MapContainer, TileLayer, Marker, Polyline } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { apiService } from '../services/api';
+import { apiService, API_BASE } from '../services/api';
 import { generateAStarRoute } from '../utils/routeUtils';
 
 // ─── Icons ───────────────────────────────────────────────────────────────────
@@ -585,7 +585,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     splitPollRef.current = setInterval(async () => {
       if (!splitRoomCodeRef.current) return;
       try {
-        const res = await fetch(`http://localhost:8000/api/v1/split/room/${splitRoomCodeRef.current}?user_id=${currentCustomerId}`);
+        const res = await fetch(`${API_BASE}/split/room/${splitRoomCodeRef.current}?user_id=${currentCustomerId}`);
         if (res.ok) {
           const data = await res.json();
           setRoomDetails(data);
@@ -608,7 +608,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     const displayName = splitDisplayName.trim() || userEmail?.split('@')[0] || 'Host';
     const cartItems = cart.map(i => ({ name: i.name, quantity: i.quantity, price: i.price }));
     try {
-      const res = await fetch('http://localhost:8000/api/v1/split/create', {
+      const res = await fetch(`${API_BASE}/split/create`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ host_id: currentCustomerId, room_pin: roomPin, display_name: displayName, cart_total: cartTotal, cart_items: cartItems })
       });
@@ -626,7 +626,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     const displayName = splitDisplayName.trim() || userEmail?.split('@')[0] || 'Guest';
     const cartItems = cart.map(i => ({ name: i.name, quantity: i.quantity, price: i.price }));
     try {
-      const res = await fetch('http://localhost:8000/api/v1/split/join', {
+      const res = await fetch(`${API_BASE}/split/join`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: currentCustomerId, room_code: joinCode.toUpperCase(), room_pin: roomPin, display_name: displayName, cart_total: cartTotal, cart_items: cartItems })
       });
@@ -642,7 +642,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     if (!roomCode) return;
     const cartItems = cart.map(i => ({ name: i.name, quantity: i.quantity, price: i.price }));
     try {
-      await fetch(`http://localhost:8000/api/v1/split/room/${roomCode}/update-cost`, {
+      await fetch(`${API_BASE}/split/room/${roomCode}/update-cost`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: currentCustomerId, cart_total: cartTotal, cart_items: cartItems })
       });
@@ -651,7 +651,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
 
   const handleSetReady = async (roomCode, isReady) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/v1/split/room/${roomCode}/ready`, {
+      const res = await fetch(`${API_BASE}/split/room/${roomCode}/ready`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: currentCustomerId, is_ready: isReady })
       });
@@ -661,7 +661,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
 
   const handlePollMembers = async (roomCode) => {
     try {
-      await fetch(`http://localhost:8000/api/v1/split/room/${roomCode}/poll`, {
+      await fetch(`${API_BASE}/split/room/${roomCode}/poll`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ host_id: currentCustomerId })
       });
@@ -673,7 +673,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     // Only host can close room; only close if order hasn't been placed yet
     if (roomDetails?.room_code && roomDetails?.is_host && !roomDetails?.order_placed) {
       try {
-        await fetch(`http://localhost:8000/api/v1/split/room/${roomDetails.room_code}/close`, {
+        await fetch(`${API_BASE}/split/room/${roomDetails.room_code}/close`, {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ host_id: currentCustomerId })
         });
@@ -703,7 +703,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
 
     setStatus(`⏳ Placing group order with ${currentRestName}...`);
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/v1/orders/', {
+      const response = await fetch(`${API_BASE}/orders/`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customer_name: userEmail || 'Customer',
@@ -722,7 +722,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
 
         // Notify the room that order was placed so guests can see it
         try {
-          await fetch(`http://localhost:8000/api/v1/split/room/${snapshot.room_code}/order-placed`, {
+          await fetch(`${API_BASE}/split/room/${snapshot.room_code}/order-placed`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ host_id: currentCustomerId, order_id: created.id })
           });
@@ -757,7 +757,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
         fireConfetti();
         // Notify the room guests that delivery is complete
         try {
-          await fetch(`http://localhost:8000/api/v1/split/room/${snapshot.room_code}/delivered`, {
+          await fetch(`${API_BASE}/split/room/${snapshot.room_code}/delivered`, {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ host_id: currentCustomerId })
           });
