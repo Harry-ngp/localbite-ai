@@ -1,41 +1,57 @@
-annotated-types
-anyio
-certifi
-charset-normalizer
-click
-colorama
-email-validator
+# Core web framework
 fastapi
+uvicorn[standard]
+starlette
+
+# Database
+SQLAlchemy
+psycopg2-binary
+greenlet
+
+# Pydantic & validation
+pydantic
+pydantic_core
+annotated-types
+email-validator
+typing_extensions
+
+# Auth
+bcrypt
+
+# Environment & config
+python-dotenv
+
+# HTTP clients
+requests
+httpx
+httpcore
+
+# Google Gemini AI
+google-genai
 google-ai-generativelanguage
 google-api-core
 google-api-python-client
 google-auth
 google-auth-httplib2
-google-genai
 googleapis-common-protos
+proto-plus
+protobuf
 grpcio
 grpcio-status
+
+# Supporting libraries
+anyio
+certifi
+charset-normalizer
+click
 h11
-httpcore
 httplib2
-httpx
 idna
 Jinja2
 MarkupSafe
 packaging
-proto-plus
-protobuf
-psycopg2-binary
 pyasn1
 pyasn1_modules
-pydantic
-pydantic_core
-python-dotenv
-requests
-SQLAlchemy
-starlette
-typing_extensions
 uritemplate
 urllib3
-uvicorn
 websockets
