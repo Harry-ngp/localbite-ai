@@ -253,7 +253,7 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
     setStatus(newState ? '⏳ Opening store...' : '⏳ Closing store...');
     try {
       const res = await fetch(
-        `http://127.0.0.1:8000/api/v1/partners/${partnerId}/restaurant/${restaurant.id}`,
+        `${API_BASE}/partners/${partnerId}/restaurant/${restaurant.id}`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -277,7 +277,7 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
   const handleLogin = async () => {
     setStatus('⏳ Authenticating...');
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/partners/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+      const res = await fetch(`${API_BASE}/partners/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
       if (res.ok) {
         const data = await res.json();
         setPartnerId(data.partner_id);
@@ -333,14 +333,14 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
   const createRestaurant = async () => {
     setStatus('⏳ Registering Kitchen...');
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/v1/partners/${partnerId}/restaurant`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: restName, description: restDesc, address: restAddr, latitude: 21.1458, longitude: 79.0882, image_url: restImg }) });
+      const res = await fetch(`${API_BASE}/partners/${partnerId}/restaurant`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: restName, description: restDesc, address: restAddr, latitude: 21.1458, longitude: 79.0882, image_url: restImg }) });
       if (res.ok) { const data = await res.json(); setRestaurant(data); setStatus(''); }
     } catch { setStatus('❌ Failed.'); }
   };
 
   const fetchMenu = async (restId) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/v1/partners/restaurant/${restId}/menu`);
+      const res = await fetch(`${API_BASE}/partners/restaurant/${restId}/menu`);
       if (res.ok) setMenuItems(await res.json());
     } catch {}
   };
@@ -349,7 +349,7 @@ export default function PartnerScreen({ goBack, globalOrders = [], updateGlobalO
     if (!itemName || !itemPrice || !itemCat) return setStatus('⚠️ Fill all required fields');
     setStatus('⏳ Publishing...');
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/v1/partners/restaurant/${restaurant.id}/menu`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: itemName, description: 'Freshly prepared.', price: parseFloat(itemPrice), category: itemCat, image_url: itemImg || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80', in_stock: itemInStock }) });
+      const res = await fetch(`${API_BASE}/partners/restaurant/${restaurant.id}/menu`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: itemName, description: 'Freshly prepared.', price: parseFloat(itemPrice), category: itemCat, image_url: itemImg || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?w=500&q=80', in_stock: itemInStock }) });
       if (res.ok) { setStatus('✅ Menu updated!'); setItemName(''); setItemPrice(''); setItemCat(''); setItemImg(''); setItemInStock(true); const fi = document.getElementById('dish-image-upload'); if (fi) fi.value = ''; fetchMenu(restaurant.id); setTimeout(() => setStatus(''), 3000); }
     } catch { setStatus('❌ Failed.'); }
   };

@@ -169,7 +169,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     if (!fraudReport.trim()) return;
     setFraudLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/customer/ai/fraud-report', {
+      const res = await fetch(`${API_BASE}/customer/ai/fraud-report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -195,7 +195,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     if (!q || q.trim().length < 2) { setSearchResults(null); setShowSearchDropdown(false); return; }
     setSearchLoading(true);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/v1/customer/search?q=${encodeURIComponent(q)}`);
+      const res = await fetch(`${API_BASE}/customer/search?q=${encodeURIComponent(q)}`);
       if (res.ok) {
         const data = await res.json();
         setSearchResults(data);
@@ -229,7 +229,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     setShowSearchDropdown(false);
     setSearchLoading(true); setAiDecision(null);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/customer/vibe-search', {
+      const res = await fetch(`${API_BASE}/customer/vibe-search`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query })
       });
@@ -261,7 +261,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     setChatMessages(updatedMessages);
     setChatLoading(true);
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/customer/ai/chat', {
+      const res = await fetch(`${API_BASE}/customer/ai/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -322,7 +322,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     const timer = setTimeout(async () => {
       setSmartPairingLoading(true);
       try {
-        const res = await fetch('http://127.0.0.1:8000/api/v1/customer/ai/pairing', {
+        const res = await fetch(`${API_BASE}/customer/ai/pairing`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ cart_items: cartItemNames, restaurant_id: selectedRestaurant.id })
@@ -396,7 +396,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
   // Load restaurants
   useEffect(() => {
     setFeedLoading(true);
-    fetch('http://127.0.0.1:8000/api/v1/customer/restaurants')
+    fetch(`${API_BASE}/customer/restaurants`)
       .then(r => r.json())
       .then(d => setRestaurants(d))
       .catch(() => {})
@@ -474,7 +474,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     setSelectedRestaurant(restaurant); setCart([]); setActiveMenuCat('All');
     setMenuLoading(true);
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/v1/partners/restaurant/${restaurant.id}/menu`);
+      const res = await fetch(`${API_BASE}/partners/restaurant/${restaurant.id}/menu`);
       if (res.ok) setRestaurantMenu(await res.json());
     } catch {}
     setMenuLoading(false);
@@ -508,7 +508,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     const currentRestName = selectedRestaurant.name;
     const grandTotal = Math.max(0, cartTotal + deliveryFee + Math.round(cartTotal * gstRate) - promoDiscount);
     try {
-      const response = await fetch('http://127.0.0.1:8000/api/v1/orders/', {
+      const response = await fetch(`${API_BASE}/orders/`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           customer_name: userEmail || 'Customer',
@@ -573,7 +573,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
     await apiService.rateOrder(currentOrderId, rating, ratingFeedback, orderFlow.restaurantId);
     setRatingSubmitted(true);
     // Refresh restaurant feed so rating updates show
-    fetch('http://127.0.0.1:8000/api/v1/customer/restaurants')
+    fetch(`${API_BASE}/customer/restaurants`)
       .then(r => r.json()).then(d => setRestaurants(d)).catch(() => {});
     setTimeout(() => { setShowRatingModal(false); setIsTracking(false); }, 1500);
   };
@@ -2348,7 +2348,7 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
                     localStorage.setItem('lb_profile', JSON.stringify(profileData)); 
                     if (propCustomerId) {
                       try {
-                        await fetch(`http://127.0.0.1:8000/api/v1/users/${propCustomerId}/profile`, {
+                        await fetch(`${API_BASE}/users/${propCustomerId}/profile`, {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify(profileData)

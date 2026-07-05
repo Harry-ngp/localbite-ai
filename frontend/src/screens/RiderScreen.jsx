@@ -187,7 +187,7 @@ export default function RiderScreen({ goBack, globalOrders, updateGlobalOrderSta
   const handleLogin = async () => {
     setStatus('⏳ Authenticating...');
     try {
-      const res = await fetch('http://127.0.0.1:8000/api/v1/riders/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+      const res = await fetch(`${API_BASE}/riders/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
       if (res.ok) {
         const data = await res.json();
         setRiderId(data.rider_id);
@@ -230,7 +230,7 @@ export default function RiderScreen({ goBack, globalOrders, updateGlobalOrderSta
   const acceptPickup = async (order) => {
     setStatus('🚨 Accepting...');
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/v1/orders/${order.id}/rider/accept?rider_id=${riderId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' } });
+      const res = await fetch(`${API_BASE}/orders/${order.id}/rider/accept?rider_id=${riderId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' } });
       if (res.ok) {
         setOffer(order);
         setIgnoredOrders(prev => new Set(prev).add(order.id));
@@ -247,7 +247,7 @@ export default function RiderScreen({ goBack, globalOrders, updateGlobalOrderSta
   const rejectPickup = async (orderId) => {
     try {
       setIgnoredOrders(prev => new Set(prev).add(orderId));
-      await fetch(`http://127.0.0.1:8000/api/v1/orders/${orderId}/rider/reject?rider_id=${riderId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' } });
+      await fetch(`${API_BASE}/orders/${orderId}/rider/reject?rider_id=${riderId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' } });
       setStatus('✋ Order rejected');
       setTimeout(() => setStatus(isOnline ? '🟢 ONLINE: Scanning...' : ''), 2000);
     } catch {}
@@ -256,7 +256,7 @@ export default function RiderScreen({ goBack, globalOrders, updateGlobalOrderSta
   const startDriving = async () => {
     if (!offer) return;
     try {
-      await fetch(`http://127.0.0.1:8000/api/v1/orders/${offer.id}/in-delivery`, { method: 'PUT', headers: { 'Content-Type': 'application/json' } });
+      await fetch(`${API_BASE}/orders/${offer.id}/in-delivery`, { method: 'PUT', headers: { 'Content-Type': 'application/json' } });
     } catch {}
     
     setIsDriving(true);
@@ -310,7 +310,7 @@ export default function RiderScreen({ goBack, globalOrders, updateGlobalOrderSta
     if (watchIdRef.current !== null && 'geolocation' in navigator) navigator.geolocation.clearWatch(watchIdRef.current);
     setStatus('⏳ Finalizing...');
     try {
-      const res = await fetch(`http://127.0.0.1:8000/api/v1/orders/${offer.id}/complete-delivery`, { method: 'PUT', headers: { 'Content-Type': 'application/json' } });
+      const res = await fetch(`${API_BASE}/orders/${offer.id}/complete-delivery`, { method: 'PUT', headers: { 'Content-Type': 'application/json' } });
       if (res.ok) {
         if (updateGlobalOrderStatus) updateGlobalOrderStatus(offer.id, 'delivered');
         // We just completed an order, fetch real updated earnings and metrics
