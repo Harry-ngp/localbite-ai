@@ -2344,7 +2344,20 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
                       <input type="text" value={profileData[field]} onChange={e => setProfileData(p => ({ ...p, [field]: e.target.value }))} className="w-full p-3 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-emerald-500 transition" />
                     </div>
                   ))}
-                  <button onClick={() => { localStorage.setItem('lb_profile', JSON.stringify(profileData)); setViewMode('home'); setShowProfile(false); }} className="w-full mt-4 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black py-3 rounded-xl transition shadow-lg shadow-emerald-500/20">
+                  <button onClick={async () => { 
+                    localStorage.setItem('lb_profile', JSON.stringify(profileData)); 
+                    if (propCustomerId) {
+                      try {
+                        await fetch(`http://127.0.0.1:8000/api/v1/users/${propCustomerId}/profile`, {
+                          method: 'PUT',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(profileData)
+                        });
+                      } catch(e) { console.error('Failed to update profile to backend', e); }
+                    }
+                    setViewMode('home'); 
+                    setShowProfile(false); 
+                  }} className="w-full mt-4 bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-black py-3 rounded-xl transition shadow-lg shadow-emerald-500/20">
                     Save Profile
                   </button>
                 </div>
@@ -2401,10 +2414,18 @@ export default function CustomerScreen({ goBack, addGlobalOrder, currentCustomer
 
                 {/* Order context chip */}
                 {fraudOrder && (
-                  <div className="mb-4 flex items-center gap-2 bg-slate-800/60 border border-white/5 rounded-xl px-3 py-2">
-                    <span className="text-slate-400 text-xs">Order from</span>
-                    <span className="text-white font-bold text-xs">{fraudOrder.restaurant?.name || 'Restaurant'}</span>
-                    <span className="ml-auto text-slate-500 text-xs font-mono">#{String(fraudOrder.id).slice(0,8)}</span>
+                  <div className="mb-4 flex flex-col gap-2 bg-slate-800/60 border border-white/5 rounded-xl px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-slate-400 text-xs">Order from</span>
+                      <span className="text-white font-bold text-xs">{fraudOrder.restaurant?.name || 'Restaurant'}</span>
+                      <span className="ml-auto text-slate-500 text-xs font-mono">#{String(fraudOrder.id).slice(0,8)}</span>
+                    </div>
+                    {fraudOrder.restaurant?.support_number && (
+                      <div className="flex items-center gap-2 text-xs border-t border-white/5 pt-2 mt-1">
+                        <span className="text-slate-400">Support Number:</span>
+                        <a href={`tel:${fraudOrder.restaurant.support_number}`} className="text-emerald-400 font-bold hover:underline">{fraudOrder.restaurant.support_number}</a>
+                      </div>
+                    )}
                   </div>
                 )}
 

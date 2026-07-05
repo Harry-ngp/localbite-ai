@@ -269,6 +269,7 @@ def get_customer_order_history(customer_id: str, db: Session = Depends(get_db)):
                     "name": rest.name,
                     "img": rest.image_url,
                     "image_url": rest.image_url,
+                    "support_number": rest.support_number,
                 } if rest else None,
             })
         return result
