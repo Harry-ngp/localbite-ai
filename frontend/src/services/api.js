@@ -1,6 +1,5 @@
-const BACKEND_URL = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000";
-export const API_BASE = `${BACKEND_URL}/api/v1`;
-export const WS_BASE  = BACKEND_URL.replace(/^http/, 'ws');
+export const API_BASE = "http://127.0.0.1:8000/api/v1";
+export const WS_BASE = "ws://127.0.0.1:8000";
 
 // ─── WebSocket Callback Registry ─────────────────────────────────────────────
 let orderUpdateCallbacks = [];
@@ -146,23 +145,23 @@ export const apiService = {
     console.log(`📡 Connecting ${type} WebSocket: ${wsUrl}`);
     try {
       const ws = new WebSocket(wsUrl);
-      ws.onopen    = () => { console.log(`🟢 ${type} WS connected`); onStatusChange?.('connected'); };
+      ws.onopen = () => { console.log(`🟢 ${type} WS connected`); onStatusChange?.('connected'); };
       ws.onmessage = (event) => {
-        try { onUpdate?.(JSON.parse(event.data)); } catch {}
+        try { onUpdate?.(JSON.parse(event.data)); } catch { }
       };
-      ws.onerror   = () => { onStatusChange?.('error'); };
-      ws.onclose   = () => {
+      ws.onerror = () => { onStatusChange?.('error'); };
+      ws.onclose = () => {
         if (ws.__intentional_close) return;
         console.log(`🔴 ${type} WS closed`); onStatusChange?.('disconnected');
         setTimeout(() => apiService._connectWebSocket(type, id, onUpdate, onStatusChange), 5000);
       };
-      
+
       const originalClose = ws.close.bind(ws);
       ws.close = () => {
         ws.__intentional_close = true;
         originalClose();
       };
-      
+
       return ws;
     } catch { return null; }
   },

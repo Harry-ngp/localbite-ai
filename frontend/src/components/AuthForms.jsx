@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import emailjs from '@emailjs/browser';
 import { useToast } from './Toast';
-import { API_BASE } from '../services/api';
 
 /* ─── Input Field Component ──────────────────────────────── */
 function Field({ id, label, type = 'text', value, onChange, placeholder, disabled, icon, autoFocus, required = true }) {
@@ -14,11 +13,10 @@ function Field({ id, label, type = 'text', value, onChange, placeholder, disable
     <div className="relative">
       <label
         htmlFor={id}
-        className={`absolute left-4 font-bold uppercase tracking-wider transition-all duration-200 pointer-events-none z-10 ${
-          focused || value
+        className={`absolute left-4 font-bold uppercase tracking-wider transition-all duration-200 pointer-events-none z-10 ${focused || value
             ? '-top-2 text-[10px] text-emerald-400 bg-[#0a0f1e] px-1.5'
             : 'top-4 text-sm text-slate-500'
-        }`}
+          }`}
       >
         {label}
       </label>
@@ -40,13 +38,11 @@ function Field({ id, label, type = 'text', value, onChange, placeholder, disable
         autoFocus={autoFocus}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        className={`w-full bg-[#0a0f1e] border rounded-xl text-white text-sm outline-none transition-all duration-200 py-4 pr-4 disabled:opacity-50 ${
-          icon ? 'pl-10' : 'pl-4'
-        } ${
-          focused
+        className={`w-full bg-[#0a0f1e] border rounded-xl text-white text-sm outline-none transition-all duration-200 py-4 pr-4 disabled:opacity-50 ${icon ? 'pl-10' : 'pl-4'
+          } ${focused
             ? 'border-emerald-500/60 shadow-[0_0_0_3px_rgba(16,185,129,0.1)]'
             : 'border-white/8 hover:border-white/15'
-        }`}
+          }`}
       />
 
       {isPw && (
@@ -70,9 +66,8 @@ function StepProgress({ step, total, labels }) {
       <div className="flex items-center gap-1 mb-2">
         {Array.from({ length: total }, (_, i) => (
           <React.Fragment key={i}>
-            <div className={`h-1 flex-1 rounded-full transition-all duration-500 ${
-              i < step ? 'bg-emerald-500' : 'bg-white/8'
-            }`} />
+            <div className={`h-1 flex-1 rounded-full transition-all duration-500 ${i < step ? 'bg-emerald-500' : 'bg-white/8'
+              }`} />
             {i < total - 1 && <div className="w-0" />}
           </React.Fragment>
         ))}
@@ -129,11 +124,10 @@ function OtpInput({ value, onChange }) {
           onKeyDown={e => handleKey(i, e)}
           onPaste={handlePaste}
           autoFocus={i === 0}
-          className={`w-14 h-16 text-center text-2xl font-black bg-[#0a0f1e] rounded-2xl border outline-none transition-all duration-200 ${
-            digits[i]
+          className={`w-14 h-16 text-center text-2xl font-black bg-[#0a0f1e] rounded-2xl border outline-none transition-all duration-200 ${digits[i]
               ? 'border-emerald-500 text-emerald-400 shadow-[0_0_0_3px_rgba(16,185,129,0.12)]'
               : 'border-white/10 text-white hover:border-white/20 focus:border-emerald-500/60 focus:shadow-[0_0_0_3px_rgba(16,185,129,0.08)]'
-          }`}
+            }`}
         />
       ))}
     </div>
@@ -152,8 +146,8 @@ function SubmitBtn({ loading, children }) {
         {loading ? (
           <>
             <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
             Processing...
           </>
@@ -167,15 +161,15 @@ function SubmitBtn({ loading, children }) {
 
 /* ─── Main Auth Forms Component ──────────────────────────── */
 export default function AuthForms({ activeRole, authMode, onLogin }) {
-  const [name,             setName]            = useState('');
-  const [email,            setEmail]           = useState('');
-  const [password,         setPassword]        = useState('');
-  const [confirmPassword,  setConfirmPassword] = useState('');
-  const [otp,              setOtp]             = useState('');
-  const [generatedOtp,     setGeneratedOtp]    = useState('');
-  const [step,             setStep]            = useState(1);
-  const [isLoading,        setIsLoading]       = useState(false);
-  const [pwStrength,       setPwStrength]      = useState(0);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+  const [step, setStep] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [pwStrength, setPwStrength] = useState(0);
   const toast = useToast();
 
   useEffect(() => {
@@ -198,7 +192,7 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
     if (!email || !password) return toast('Please fill in all fields', 'error');
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/login`, {
+      const res = await fetch('http://localhost:8000/api/v1/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password, role: activeRole }),
@@ -248,7 +242,7 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
     if (password !== confirmPassword) return toast('Passwords do not match', 'error');
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/auth/signup`, {
+      const res = await fetch('http://localhost:8000/api/v1/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, email, password, role: activeRole }),
@@ -360,10 +354,9 @@ export default function AuthForms({ activeRole, authMode, onLogin }) {
           {/* Password strength */}
           {password && (
             <div className="flex gap-1 -mt-2">
-              {[1,2,3,4].map(i => (
-                <div key={i} className={`h-1 flex-1 rounded-full transition-all duration-300 ${
-                  i <= pwStrength ? `bg-${strengthColors[pwStrength]}-400` : 'bg-white/8'
-                }`} />
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className={`h-1 flex-1 rounded-full transition-all duration-300 ${i <= pwStrength ? `bg-${strengthColors[pwStrength]}-400` : 'bg-white/8'
+                  }`} />
               ))}
               <span className={`text-[10px] font-bold ml-1 text-${strengthColors[pwStrength]}-400`}>
                 {strengthLabels[pwStrength]}
