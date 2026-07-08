@@ -92,7 +92,7 @@ def login_rider(request: LoginRequest, db: Session = Depends(get_db)):
 # ==========================================
 # 6. Root Endpoint (for Render Health Checks)
 # ==========================================
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def read_root():
     return {"status": "online", "message": "LocalBite API is running"}
 
