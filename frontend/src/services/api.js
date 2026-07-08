@@ -1,4 +1,5 @@
-export const API_BASE = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api/v1";
+const rawApiUrl = import.meta.env.VITE_API_URL || "http://127.0.0.1:8000/api/v1";
+export const API_BASE = rawApiUrl.endsWith('/api/v1') ? rawApiUrl : rawApiUrl.replace(/\/$/, '') + '/api/v1';
 export const WS_BASE = import.meta.env.VITE_WS_BASE_URL || "ws://127.0.0.1:8000";
 
 // ─── WebSocket Callback Registry ─────────────────────────────────────────────
