@@ -1,5 +1,5 @@
-export const API_BASE = "http://127.0.0.1:8000/api/v1";
-export const WS_BASE = "ws://127.0.0.1:8000";
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api/v1";
+export const WS_BASE = import.meta.env.VITE_WS_BASE_URL || "ws://127.0.0.1:8000";
 
 // ─── WebSocket Callback Registry ─────────────────────────────────────────────
 let orderUpdateCallbacks = [];
